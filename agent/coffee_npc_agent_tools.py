@@ -277,9 +277,9 @@ class CoffeeNpcAgentTools:
                         "session_id": {"type": "string"},
                         "player_id": {"type": "string"},
                         "npc_id": {"type": "string"},
-                        "content": {"type": "string"},
+                        "message": {"type": "string"},
                     },
-                    "required": ["session_id", "player_id", "npc_id", "content"],
+                    "required": ["session_id", "player_id", "npc_id", "message"],
                 },
             },
             {
@@ -606,11 +606,11 @@ class CoffeeNpcAgentTools:
             summary=summary or "暂无历史对话记录。",
         )
 
-    def write_player_message(self, session_id: str, player_id: str, npc_id: str, content: str) -> dict[str, Any]:
-        if not all([session_id, player_id, npc_id, content]):
+    def write_player_message(self, session_id: str, player_id: str, npc_id: str, message: str) -> dict[str, Any]:
+        if not all([session_id, player_id, npc_id, message]):
             return _fail("write_player_message", "缺少必要参数")
         msg = self.dialogues.add_player_message(
-            PlayerMessageCreate(session_id=session_id, player_id=player_id, npc_id=npc_id, content=content)
+            PlayerMessageCreate(session_id=session_id, player_id=player_id, npc_id=npc_id, content=message)
         )
         return _ok("write_player_message", message=msg)
 

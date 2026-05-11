@@ -22,7 +22,7 @@ from .db_config import (
     EventType,
     Npc,
     NpcType,
-    SessionLocal,
+    DbSessionLocal,
     TimePeriod,
     check_database_connection,
     engine,
@@ -236,7 +236,7 @@ def seed_encounter_rules(db: Session) -> None:
 
 
 def seed_default_data() -> None:
-    with SessionLocal() as db:
+    with DbSessionLocal() as db:
         seed_npcs(db)
         seed_events(db)
         seed_knowledge(db)

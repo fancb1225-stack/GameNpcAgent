@@ -9,7 +9,7 @@ from typing import Any, Dict, List, Optional
 from sqlalchemy import select
 from sqlalchemy.exc import SQLAlchemyError
 
-from db.db_config import SessionLocal, ShortTermMemory, LongTermMemory
+from db.db_config import DbSessionLocal, ShortTermMemory, LongTermMemory
 from db.db_service import DbService
 from service.embedding_service import EmbeddingService
 
@@ -94,7 +94,7 @@ class MemoryService:
 
         normalized_message = self._normalize_message(message)
 
-        with SessionLocal() as session:
+        with DbSessionLocal() as session:
             memory = (
                 session.query(ShortTermMemory)
                 .filter(
@@ -137,7 +137,7 @@ class MemoryService:
         npc_id: str,
         llm_service: Optional[Any] = None,
     ) -> Dict[str, Any]:
-        with SessionLocal() as session:
+        with DbSessionLocal() as session:
             memory = (
                 session.query(ShortTermMemory)
                 .filter(
@@ -206,7 +206,7 @@ class MemoryService:
             memory_type=memory_type,
         )
 
-        with SessionLocal() as session:
+        with DbSessionLocal() as session:
             row = LongTermMemory(
                 memory_id=f"mem_{uuid.uuid4().hex[:16]}",
                 player_id=player_id,
@@ -242,7 +242,7 @@ class MemoryService:
         limit = max(1, min(int(limit), 50))
         query_embedding = self.embedding_service.embed_query(query)
 
-        with SessionLocal() as session:
+        with DbSessionLocal() as session:
             stmt = (
                 select(
                     LongTermMemory,
@@ -285,7 +285,7 @@ class MemoryService:
     ) -> Dict[str, Any]:
         limit = max(1, min(int(limit), 50))
 
-        with SessionLocal() as session:
+        with DbSessionLocal() as session:
             query = session.query(LongTermMemory).filter(LongTermMemory.player_id == player_id)
             if npc_id:
                 query = query.filter(LongTermMemory.npc_id == npc_id)
@@ -503,7 +503,7 @@ npc_id: {npc_id}
         updated_count = 0
         failed_items: List[Dict[str, Any]] = []
 
-        with SessionLocal() as session:
+        with DbSessionLocal() as session:
             query = (
                 session.query(LongTermMemory)
                 .filter(LongTermMemory.embedding.is_(None))

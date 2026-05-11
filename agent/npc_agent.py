@@ -18,6 +18,9 @@ import re
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Protocol, Tuple
+
+from patch_ng import debugmode
+
 from service.memory_service_pgvector import MemoryService
 
 try:
@@ -184,7 +187,7 @@ class NpcAgent:
                 "session_id": session_id,
                 "player_id": player_id,
                 "npc_id": self.npc_id,
-                "content": content.strip(),
+                "message": content or content.strip(),
             },
         )
         tool_results["write_player_message"] = player_msg
@@ -287,6 +290,8 @@ class NpcAgent:
             },
             llm_service=self.llm,
         )
+
+
 
         return {
             "ok": True,

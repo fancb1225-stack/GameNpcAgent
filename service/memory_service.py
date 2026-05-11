@@ -9,7 +9,7 @@ from db.db_service import DbService
 from model.memory_model import LongTermMemoryCreate, LongTermMemoryRead, ShortMemoryMessage, ShortTermMemoryRead
 from db.db_config import (
     MemoryType,
-    SessionLocal,
+    DbSessionLocal,
     ShortTermMemory,
     LongTermMemory,
 )
@@ -88,7 +88,7 @@ class MemoryService:
 
         normalized_message = self._normalize_message(message)
 
-        with SessionLocal() as session:
+        with DbSessionLocal() as session:
             memory = (
                 session.query(ShortTermMemory)
                 .filter(
@@ -151,7 +151,7 @@ class MemoryService:
     ) -> Dict[str, Any]:
         """查询玩家与 NPC 的短期记忆。"""
 
-        with SessionLocal() as session:
+        with DbSessionLocal() as session:
             memory = (
                 session.query(ShortTermMemory)
                 .filter(
@@ -194,7 +194,7 @@ class MemoryService:
 
         limit = max(1, min(int(limit), 50))
 
-        with SessionLocal() as session:
+        with DbSessionLocal() as session:
             query = session.query(LongTermMemory).filter(
                 LongTermMemory.player_id == player_id
             )
@@ -308,20 +308,17 @@ class MemoryService:
         if llm_service is not None:
             try:
                 prompt = f"""
-    请将以下咖啡厅 NPC 对话压缩为一条长期记忆。
+    你是游戏 NPC 记忆摘要模块，负责将玩家与咖啡厅 NPC 的对话压缩为一条长期记忆，只输出合法 JSON。
 
     要求：
     1. 标题不超过 30 字。
-    2. 内容保留玩家偏好、关系变化、重要事件或需要注意的信息。
+    2. content 是一段摘要，根据prompt输入的对话总结；需要保留玩家偏好、关系变化、重要事件或需要注意的信息。
     3. memory_type 只能是 preference、relationship、event、habit、warning 之一。
     4. importance 是 0 到 1 的浮点数。
     5. 只返回 JSON，不要输出额外解释。
 
     player_id: {player_id}
     npc_id: {npc_id}
-
-    对话：
-    {dialogue_text}
 
     返回格式：
     {{
@@ -331,8 +328,11 @@ class MemoryService:
       "importance": 0.7
     }}
     """
+                print("==========================\n")
+                print(prompt)
+                print("==========================\n")
                 response, _ = llm_service.chat(
-                    prompt=prompt,
+                    prompt=dialogue_text,
                     history=[],
                     system_prompt="你是游戏 NPC 记忆摘要模块，只输出合法 JSON。",
                 )
@@ -420,14 +420,20 @@ class MemoryService:
 
         data = dict(message)
 
-        data.setdefault("timestamp", datetime.now(timezone.utc).isoformat())
+        print(data)
+        # data.setdefault("timestamp", datetime.now(timezone.utc).isoformat())
 
         allowed_roles = {"player", "npc", "system"}
         if data.get("role") not in allowed_roles:
             data["role"] = "system"
 
-        data["content"] = str(data.get("content", "")).strip()
-
+        # data["content"] = str(data.get("content", "")).strip()
+        data = dict({
+            "role": data["role"],
+            "content": data["content"],
+            "emotion": data["emotion"],
+            "timestamp": message["timestamp"]
+        })
         return data
 
     def _safe_memory_type(self, value: str) -> str:
@@ -444,7 +450,13 @@ class MemoryService:
 
     def get_short_memory(self, player_id: str, npc_id: str) -> ShortTermMemoryRead | None:
         memory = self.db.get_short_memory(player_id, npc_id)
-        return ShortTermMemoryRead.model_validate(memory) if memory else None
+        if memory is None:
+            print("原始数据库记忆：未找到\n")
+            return None
+
+        short_memory = ShortTermMemoryRead.model_validate(memory)
+        print(f"原始数据库记忆：{short_memory}\n")
+        return short_memory
 
     def append_short_memory(self, player_id: str, npc_id: str, message: ShortMemoryMessage | dict) -> ShortTermMemoryRead:
         payload = message.model_dump() if isinstance(message, ShortMemoryMessage) else dict(message)
@@ -479,3 +491,19 @@ class MemoryService:
             metadata_json={"source": "short_term_memory", "message_count": len(messages)},
         )
         return self.create_long_memory(data)
+
+
+if __name__ == "__main__":
+    memory_service = MemoryService()
+
+    short_memory = memory_service.get_short_memory(npc_id="barista_001", player_id="test_001")
+
+    if short_memory is not None:
+        for message in short_memory.messages:
+            if len(message['content']) < 100:
+                print({
+                    "role": message["role"],
+                    "content": message["content"],
+                    "emotion": message["emotion"],
+                    "timestamp": message["timestamp"]
+                })

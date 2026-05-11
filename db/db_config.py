@@ -49,7 +49,7 @@ engine = create_engine(
     max_overflow=int(os.getenv("DB_MAX_OVERFLOW", "10")),
 )
 
-SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False, expire_on_commit=False)
+DbSessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False, expire_on_commit=False)
 
 
 def utc_now() -> datetime:
@@ -351,7 +351,7 @@ MODEL_REGISTRY: dict[str, type[Base]] = {
 
 
 def get_db() -> Session:
-    return SessionLocal()
+    return DbSessionLocal()
 
 
 def check_database_connection() -> bool:

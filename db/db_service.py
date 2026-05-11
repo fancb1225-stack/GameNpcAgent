@@ -33,7 +33,7 @@ from .db_config import (
     Npc,
     Player,
     Relationship,
-    SessionLocal,
+    DbSessionLocal,
     ShortTermMemory,
     SourceType,
 )
@@ -51,7 +51,7 @@ def model_to_dict(obj: Base) -> dict[str, Any]:
 
 class DbService:
     def __init__(self, session: Session | None = None):
-        self.db = session or SessionLocal()
+        self.db = session or DbSessionLocal()
         self._owns_session = session is None
 
     def __enter__(self) -> "DbService":
