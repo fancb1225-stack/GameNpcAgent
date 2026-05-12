@@ -455,7 +455,7 @@ class MemoryService:
             return None
 
         short_memory = ShortTermMemoryRead.model_validate(memory)
-        print(f"原始数据库记忆：{short_memory}\n")
+        # print(f"原始数据库记忆：{short_memory}\n")
         return short_memory
 
     def append_short_memory(self, player_id: str, npc_id: str, message: ShortMemoryMessage | dict) -> ShortTermMemoryRead:

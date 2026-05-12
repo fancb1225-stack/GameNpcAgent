@@ -10,8 +10,9 @@ from __future__ import annotations
 
 import json
 import os
+import uuid
 from datetime import date, datetime
-from uuid import uuid4
+from uuid import UUID, uuid4
 from enum import Enum
 from typing import Any, Callable, Optional
 
@@ -44,6 +45,8 @@ def _jsonable(value: Any) -> Any:
         return value.value
     if isinstance(value, (datetime, date)):
         return value.isoformat()
+    if isinstance(value, uuid.UUID):
+        return str(value)
     if isinstance(value, list):
         return [_jsonable(item) for item in value]
     if isinstance(value, tuple):
@@ -115,6 +118,7 @@ class CoffeeNpcAgentTools:
             "get_recommendation_context": self.get_recommendation_context,
             "check_action_allowed": self.check_action_allowed,
             "web_search": self.web_search,
+            "append_short_term_message": self.append_short_term_message,
         }
 
     def close(self) -> None:
@@ -503,6 +507,9 @@ class CoffeeNpcAgentTools:
     def get_npc_state(self, npc_id: str) -> dict[str, Any]:
         if not npc_id:
             return _fail("get_npc_state", "缺少必要参数 npc_id")
+        if npc_id == "__list_all__":
+            npcs = self.npcs.list_active_npcs()
+            return _ok("get_npc_state", npcs=npcs, count=len(npcs))
         npc = self.npcs.get_npc(npc_id)
         if npc is None:
             return _fail("get_npc_state", "未找到 NPC", npc_id=npc_id)
@@ -664,6 +671,14 @@ class CoffeeNpcAgentTools:
         if memory is None:
             return _ok("get_short_term_memory", player_id=player_id, npc_id=npc_id, count=0, messages=[])
         return _ok("get_short_term_memory", memory=memory, count=memory.message_count, messages=memory.messages)
+
+    def append_short_term_message(self, player_id: str, npc_id: str, message: dict, async_archive: bool = False):
+        return self.memories.append_short_term_message(
+            player_id=player_id,
+            npc_id=npc_id,
+            message=message,
+            # async_archive=async_archive,
+        )
 
     def get_long_term_memories(self, player_id: str, npc_id: Optional[str] = None, limit: int = 20) -> dict[str, Any]:
         if not player_id:

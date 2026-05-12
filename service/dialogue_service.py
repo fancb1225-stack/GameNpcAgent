@@ -107,5 +107,26 @@ class DialogueService:
             self.end_session(data.session_id)
         return message
 
-    def list_messages(self, session_id: str, limit: int = 50) -> list[DialogueMessageRead]:
-        return [DialogueMessageRead.model_validate(row) for row in self.db.list_dialogue_messages(session_id, limit=limit)]
+    def list_messages(
+        self,
+        session_id: str | None = None,
+        player_id: str | None = None,
+        npc_id: str | None = None,
+        limit: int = 50,
+    ) -> list[DialogueMessageRead]:
+        from db.db_config import DialogueMessage
+        filters: dict[str, Any] = {}
+        if session_id:
+            filters["session_id"] = session_id
+        if player_id:
+            filters["player_id"] = player_id
+        if npc_id:
+            filters["npc_id"] = npc_id
+        rows = self.db.list(
+            DialogueMessage,
+            filters=filters or None,
+            limit=limit,
+            order_by="created_at",
+            desc=False,
+        )
+        return [DialogueMessageRead.model_validate(row) for row in rows]

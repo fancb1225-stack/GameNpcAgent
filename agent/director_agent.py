@@ -3,7 +3,7 @@ Director Agent for CoffeeNpcAgent.
 
 职责：
 1. 负责咖啡厅场景入口和会话调度。
-2. 管理多个 NpcAgent 实例。
+2. 管理多个 NpcGraphAgent 实例。
 3. 将玩家消息路由给当前选择的 NPC。
 4. 提供稳定的上层接口，供 FastAPI、CLI 或游戏服务调用。
 
@@ -22,15 +22,18 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
 from agent.llm import LlmService
 
+
+DEFAULT_LLM_ARGUMENT = object()
+
 try:
     from agent.coffee_npc_agent_tools import CoffeeNpcAgentTools
 except Exception:  # 允许调用方注入 tools
     CoffeeNpcAgentTools = Any  # type: ignore
 
 try:
-    from agent.npc_agent import NpcAgent
+    from agent.npc_graph_agent import NpcGraphAgent
 except Exception:
-    from npc_agent import NpcAgent  # type: ignore
+    from npc_graph_agent import NpcGraphAgent  # type: ignore
 
 
 @dataclass
@@ -47,13 +50,14 @@ class DirectorAgent:
     def __init__(
         self,
         tools: Optional[CoffeeNpcAgentTools] = None,
-        llm: Optional[LlmService.getLLM()] = None,
+        llm: Any = DEFAULT_LLM_ARGUMENT,
         enable_web_search: bool = False,
     ) -> None:
         self.tools = tools or CoffeeNpcAgentTools(enable_web_search=enable_web_search)
-        self.llm = llm or LlmService.getLLM()
+        # 未传入 llm 时默认创建；显式传入 None 时使用图 Agent 的规则降级。
+        self.llm = LlmService.getLLM() if llm is DEFAULT_LLM_ARGUMENT else llm
         self.sessions: Dict[str, DirectorSession] = {}
-        self.npc_agents: Dict[str, NpcAgent] = {}
+        self.npc_agents: Dict[str, NpcGraphAgent] = {}
 
     def close(self) -> None:
         if hasattr(self.tools, "close"):
@@ -140,10 +144,11 @@ class DirectorAgent:
             self.select_npc(session_id=session_id, npc_id=npc_id)
 
         npc_agent = self.get_npc_agent(target_npc_id)
-        return npc_agent.handle_player_message(
-            player_id=player_id,
+        return npc_agent.handle_message(
             session_id=session_id,
-            content=message,
+            player_id=player_id,
+            npc_id=target_npc_id,
+            player_message=message,
         )
 
     def get_scene_snapshot(self, session_id: str) -> Dict[str, Any]:
@@ -190,13 +195,13 @@ class DirectorAgent:
             )
         return payload
 
-    def get_npc_agent(self, npc_id: str) -> NpcAgent:
-        """获取或创建单个 NPC Agent。"""
+    def get_npc_agent(self, npc_id: str) -> NpcGraphAgent:
+        """获取或创建单个图 Agent。"""
         if npc_id not in self.npc_agents:
-            self.npc_agents[npc_id] = NpcAgent(
-                npc_id=npc_id,
+            # 图 Agent 内部按每轮消息传入 npc_id，这里只复用编译后的图实例。
+            self.npc_agents[npc_id] = NpcGraphAgent(
                 tools=self.tools,
-                llm=self.llm,
+                llm_service=self.llm,
             )
         return self.npc_agents[npc_id]
 
@@ -211,7 +216,11 @@ class DirectorAgent:
             return self.tools.get_available_tools()
         return []
 
-    def invoke_tool(self, tool_name: str, arguments: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    def invoke_tool(
+        self,
+        tool_name: str,
+        arguments: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
         """暴露一个受控工具调用入口，方便调试。"""
         if not hasattr(self.tools, "invoke_tool"):
             return self._fail("当前 tools 不支持 invoke_tool")
@@ -228,11 +237,14 @@ if __name__ == "__main__":
     scene = director.enter_morning_cafe(player_id="p001", nickname="玩家")
     print("SCENE:", scene)
 
-    session_id = scene.get("result", {}).get("session", {}).get("session_id") or "default_morning_session"
+    session_id = (
+        scene.get("result", {}).get("session", {}).get("session_id")
+        or "default_morning_session"
+    )
     director.select_npc(session_id=session_id, npc_id="barista_001")
     reply = director.talk(
         player_id="p001",
         session_id=session_id,
         message="门口打架的终于走了",
     )
-    print("REPLY:", reply['npc_reply'])
+    print("REPLY:", reply.get("reply") or reply.get("npc_reply"))

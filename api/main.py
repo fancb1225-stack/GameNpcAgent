@@ -74,14 +74,13 @@ def _create_llm_if_enabled() -> Optional[Any]:
     """
     按环境变量决定是否启用 LLM。
 
-    默认不启用，方便先跑通后端、数据库和规则降级逻辑。
+    默认启用，避免图 Agent 在已配置 LLM 时意外走规则降级逻辑。
 
-    启用方式：
-    ENABLE_LLM=true
-    并保证 llm.py / agent_config.py 中的 LlmService 与 llm_api_key 可用。
+    禁用方式：
+    ENABLE_LLM=false
     """
-    enabled = os.getenv("ENABLE_LLM", "false").lower() in {"1", "true", "yes", "y"}
-    if not enabled:
+    disabled = os.getenv("ENABLE_LLM", "true").lower() in {"0", "false", "no", "n", "off"}
+    if disabled:
         return None
 
     try:
@@ -230,11 +229,44 @@ def get_player_npc_relationship(player_id: str, npc_id: str) -> ApiResponse:
     return ApiResponse(ok=True, data=_return_or_raise(result))
 
 
+@app.get("/npcs", response_model=ApiResponse)
+def list_npcs() -> ApiResponse:
+    """列出所有活跃 NPC。"""
+    result = get_director().invoke_tool("get_npc_state", {"npc_id": "__list_all__"})
+    return ApiResponse(ok=True, data=_return_or_raise(result))
+
+
 @app.get("/npcs/{npc_id}", response_model=ApiResponse)
 def get_npc_state(npc_id: str) -> ApiResponse:
     """查询 NPC 当前状态。"""
     result = get_director().invoke_tool("get_npc_state", {"npc_id": npc_id})
     return ApiResponse(ok=True, data=_return_or_raise(result))
+
+
+@app.get("/dialogue/history", response_model=ApiResponse)
+def get_dialogue_history(
+    player_id: str = Query(..., min_length=1, description="玩家 ID"),
+    npc_id: str = Query(..., min_length=1, description="NPC ID"),
+    limit: int = Query(default=50, ge=1, le=200),
+) -> ApiResponse:
+    """查询玩家与指定 NPC 的所有历史对话，按时间先后排序。"""
+    from service.dialogue_service import DialogueService
+    from db.db_service import DbService as _DbService
+    db = _DbService()
+    try:
+        dialogues = DialogueService(db)
+        rows = dialogues.list_messages(
+            session_id=None,
+            player_id=player_id,
+            npc_id=npc_id,
+            limit=limit,
+        )
+        messages = [r.model_dump(mode="json") for r in rows]
+        return ApiResponse(ok=True, data={"messages": messages, "count": len(messages)})
+    except Exception as exc:
+        return ApiResponse(ok=False, error=str(exc))
+    finally:
+        db.close()
 
 
 @app.get("/world-state/{session_id}", response_model=ApiResponse)
@@ -247,7 +279,10 @@ def get_world_state(session_id: str) -> ApiResponse:
 @app.get("/coffee-knowledge", response_model=ApiResponse)
 def get_coffee_knowledge(
     query: Optional[str] = Query(default=None, description="可选查询文本"),
-    category: Optional[str] = Query(default=None, description="可选分类：bean / brew / milk / flavor / menu"),
+    category: Optional[str] = Query(
+        default=None,
+        description="可选分类：bean / brew / milk / flavor / menu",
+    ),
     limit: int = Query(default=10, ge=1, le=50),
 ) -> ApiResponse:
     """查询咖啡知识库。"""
