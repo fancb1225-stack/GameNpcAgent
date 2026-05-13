@@ -20,7 +20,7 @@ import sys
 import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
-from agent.llm import LlmService
+from agent.llm_service import LlmService
 
 
 DEFAULT_LLM_ARGUMENT = object()

@@ -84,9 +84,9 @@ def _create_llm_if_enabled() -> Optional[Any]:
         return None
 
     try:
-        from agent.llm import LlmService
+        from agent.llm_service import LlmService
     except Exception as exc:  # pragma: no cover
-        raise RuntimeError("ENABLE_LLM=true，但无法导入 llm.py ") from exc
+        raise RuntimeError("ENABLE_LLM=true，但无法导入 llm_service.py ") from exc
 
     return LlmService.getLLM()
 

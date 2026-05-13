@@ -1523,7 +1523,7 @@ test_npc_graph_agent.py
 
 ```python
 from agent.coffee_npc_agent_tools import CoffeeNpcAgentTools
-from agent.llm import LlmService
+from agent.llm_service import LlmService
 from agent.npc_graph_agent import NpcGraphAgent
 
 

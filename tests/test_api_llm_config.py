@@ -2,7 +2,7 @@ import importlib
 import sys
 import types
 
-from agent.llm import LlmService
+from agent.llm_service import LlmService
 
 
 class FakeLlm:

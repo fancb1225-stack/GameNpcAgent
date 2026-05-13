@@ -1,0 +1,24 @@
+[
+    {
+        "case_id": "order_latte",
+        "user_input": "我想要一杯拿铁，少糖。",
+        "expected_action": "chat",
+        "required_keywords": ["拿铁"],
+        "context": {
+            "session_id": "eval_order_latte",
+            "player_id": "eval_player",
+            "npc_id": "barista_001"
+        }
+    },
+    {
+        "case_id": "recommend_morning_coffee",
+        "user_input": "今天上午你推荐喝什么？",
+        "expected_action": "chat",
+        "required_keywords": ["手冲"],
+        "context": {
+            "session_id": "eval_recommend_morning",
+            "player_id": "eval_player",
+            "npc_id": "barista_001"
+        }
+    }
+]

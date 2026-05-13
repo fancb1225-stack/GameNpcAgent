@@ -245,11 +245,16 @@ def decide_action(state: NpcGraphState) -> Dict[str, Any]:
         ensure_ascii=False,
         default=str,
     )
+    import time
+    start_time = time.time()
     response, _ = llm_service.chat(
         prompt=prompt,
         history=[],
         system_prompt="你是游戏 NPC 决策模块，只输出合法 JSON。",
     )
+    end_time = time.time()
+    print(f"LLM处理耗时：{end_time - start_time}s\n")
+
     decision = normalize_decision(extract_json_object(response))
 
     return {
@@ -731,7 +736,7 @@ class NpcGraphAgent:
 def build_example_agent_state() -> NpcGraphState:
     # 构造一个可直接交给 graph.invoke 的示例状态。
     from agent.coffee_npc_agent_tools import CoffeeNpcAgentTools
-    from agent.llm import LlmService
+    from agent.llm_service import LlmService
 
     return {
         "session_id": "s001",
@@ -739,7 +744,7 @@ def build_example_agent_state() -> NpcGraphState:
         "npc_id": "barista_001",
         "player_message": "不好了！咖啡厅门口有人打架！",
         "tools": CoffeeNpcAgentTools(),
-        "llm_service": LlmService.getLLM(),
+        "llm_service": LlmService.getMinimax(),
         "errors": [],
     }
 
