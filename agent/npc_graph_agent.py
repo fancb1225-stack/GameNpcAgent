@@ -120,6 +120,7 @@ def retrieve_memories(state: NpcGraphState) -> Dict[str, Any]:
     long_memory = tools.invoke_tool("get_long_term_memories", {
         "player_id": state["player_id"],
         "npc_id": state["npc_id"],
+        "query": state.get("player_message", ""),
         "limit": 5,
     })
 
@@ -431,6 +432,39 @@ def _run_delayed_next_action(snapshot: Dict[str, Any]) -> None:
     })
 
 
+def _archive_short_memory_if_needed(
+    state: NpcGraphState,
+    append_result: Dict[str, Any],
+) -> Dict[str, Any] | None:
+    # 短期窗口溢出后，才调用长期记忆服务生成摘要并写入长期记忆。
+    if not append_result.get("needs_archive"):
+        return None
+
+    archive_messages = append_result.get("archive_messages") or []
+    if not archive_messages:
+        return None
+
+    tools = state["tools"]
+    long_result = tools.invoke_tool("create_long_term_memory_from_messages", {
+        "player_id": state["player_id"],
+        "npc_id": state["npc_id"],
+        "messages": archive_messages,
+        "llm_service": state.get("llm_service"),
+    })
+    if long_result.get("ok"):
+        trim_result = tools.invoke_tool("trim_short_term_memory", {
+            "player_id": state["player_id"],
+            "npc_id": state["npc_id"],
+            "remove_count": append_result.get("archive_message_count", len(archive_messages)),
+        })
+        return {
+            "long_term_memory": long_result,
+            "trim_short_term_memory": trim_result,
+        }
+
+    return {"long_term_memory": long_result}
+
+
 def decide_next_action(state: NpcGraphState) -> Dict[str, Any]:
     # 判断 NPC 是否需要安排下一步动作，并用定时器延迟执行。
     if not _looks_like_coffee_order(state):
@@ -561,7 +595,7 @@ def write_memory(state: NpcGraphState) -> Dict[str, Any]:
     })
     def append_short_memories() -> None:
         # 后台写入短期记忆，避免阻塞后续动作调度。
-        tools.invoke_tool("append_short_term_message", {
+        player_memory_result = tools.invoke_tool("append_short_term_message", {
             "player_id": state["player_id"],
             "npc_id": state["npc_id"],
             "message": {
@@ -573,7 +607,9 @@ def write_memory(state: NpcGraphState) -> Dict[str, Any]:
             },
             "async_archive": False,
         })
-        tools.invoke_tool("append_short_term_message", {
+        _archive_short_memory_if_needed(state, player_memory_result)
+
+        npc_memory_result = tools.invoke_tool("append_short_term_message", {
             "player_id": state["player_id"],
             "npc_id": state["npc_id"],
             "message": {
@@ -587,6 +623,7 @@ def write_memory(state: NpcGraphState) -> Dict[str, Any]:
             },
             "async_archive": True,
         })
+        _archive_short_memory_if_needed(state, npc_memory_result)
 
     memory_thread = threading.Thread(target=append_short_memories, daemon=True)
     memory_thread.start()

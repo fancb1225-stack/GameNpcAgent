@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from typing import Any
 
 from db.db_config import MessageRole, NpcAction, SessionStatus, SourceType
 from db.db_service import DbService
@@ -12,15 +12,12 @@ from model.dialogue_model import (
     NpcReplyCreate,
     PlayerMessageCreate,
 )
-from model.memory_model import ShortMemoryMessage
-from service.memory_service import MemoryService
 
 
 class DialogueService:
     def __init__(self, db: DbService | None = None):
         self.db = db or DbService()
         self._owns_db = db is None
-        self.memory_service = MemoryService(self.db)
 
     def close(self) -> None:
         if self._owns_db:
@@ -54,18 +51,6 @@ class DialogueService:
 
     def add_message(self, data: DialogueMessageCreate) -> DialogueMessageRead:
         message = self.db.add_dialogue_message(**data.model_dump())
-        if data.npc_id and data.role in (MessageRole.PLAYER, MessageRole.NPC):
-            self.memory_service.append_short_memory(
-                data.player_id,
-                data.npc_id,
-                ShortMemoryMessage(
-                    role=str(data.role.value if hasattr(data.role, "value") else data.role),
-                    content=data.content,
-                    timestamp=datetime.now(timezone.utc).isoformat(),
-                    emotion=str(data.emotion.value) if data.emotion else None,
-                    metadata={"message_id": str(message.id), "intent": data.intent, "action": str(data.action) if data.action else None},
-                ),
-            )
         return DialogueMessageRead.model_validate(message)
 
     def add_player_message(self, data: PlayerMessageCreate) -> DialogueMessageRead:

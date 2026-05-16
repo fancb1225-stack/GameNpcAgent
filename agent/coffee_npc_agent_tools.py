@@ -28,10 +28,11 @@ from model.world_model import CafeWorldStateUpdate
 from service.cafe_scene_service import CafeSceneService
 from service.coffee_knowledge_service import CoffeeKnowledgeService
 from service.dialogue_service import DialogueService
-from service.memory_service import MemoryService
+from service.long_memory_service import LongMemoryService
 from service.npc_service import NpcService
 from service.player_service import PlayerService
 from service.relationship_service import RelationshipService
+from service.short_memory_service import ShortMemoryService
 from service.world_state_service import WorldStateService
 
 
@@ -81,16 +82,23 @@ class CoffeeNpcAgentTools:
         4. Illegal or unknown actions can be checked before being applied.
     """
 
-    def __init__(self, enable_web_search: bool = False, search_api_key: str | None = None) -> None:
+    def __init__(
+        self,
+        enable_web_search: bool = False,
+        search_api_key: str | None = None,
+        llm_service: Any | None = None,
+    ) -> None:
         self.db = DbService()
         self.players = PlayerService(self.db)
         self.npcs = NpcService(self.db)
         self.relationships = RelationshipService(self.db)
         self.dialogues = DialogueService(self.db)
-        self.memories = MemoryService(self.db)
+        self.short_memories = ShortMemoryService(self.db)
+        self.long_memories = LongMemoryService(self.db)
         self.world = WorldStateService(self.db)
         self.coffee = CoffeeKnowledgeService(self.db)
         self.scene = CafeSceneService(self.db)
+        self.llm_service = llm_service
 
         self.enable_web_search = enable_web_search
         self.search_api_key = search_api_key or os.getenv("TAVILY_API_KEY") or os.getenv("SEARCH_API_KEY")
@@ -111,6 +119,7 @@ class CoffeeNpcAgentTools:
             "get_short_term_memory": self.get_short_term_memory,
             "get_long_term_memories": self.get_long_term_memories,
             "create_long_term_memory": self.create_long_term_memory,
+            "create_long_term_memory_from_messages": self.create_long_term_memory_from_messages,
             "get_world_state": self.get_world_state,
             "update_world_state": self.update_world_state,
             "get_cafe_events": self.get_cafe_events,
@@ -119,6 +128,7 @@ class CoffeeNpcAgentTools:
             "check_action_allowed": self.check_action_allowed,
             "web_search": self.web_search,
             "append_short_term_message": self.append_short_term_message,
+            "trim_short_term_memory": self.trim_short_term_memory,
         }
 
     def close(self) -> None:
@@ -667,23 +677,67 @@ class CoffeeNpcAgentTools:
     def get_short_term_memory(self, player_id: str, npc_id: str) -> dict[str, Any]:
         if not player_id or not npc_id:
             return _fail("get_short_term_memory", "缺少必要参数 player_id 或 npc_id")
-        memory = self.memories.get_short_memory(player_id, npc_id)
+        memory = self.short_memories.get_short_memory(player_id, npc_id)
         if memory is None:
             return _ok("get_short_term_memory", player_id=player_id, npc_id=npc_id, count=0, messages=[])
         return _ok("get_short_term_memory", memory=memory, count=memory.message_count, messages=memory.messages)
 
-    def append_short_term_message(self, player_id: str, npc_id: str, message: dict, async_archive: bool = False):
-        return self.memories.append_short_term_message(
+    def append_short_term_message(
+        self,
+        player_id: str,
+        npc_id: str,
+        message: dict,
+        async_archive: bool = False,
+        llm_service: Any | None = None,
+    ):
+        return self.short_memories.append_short_term_message(
             player_id=player_id,
             npc_id=npc_id,
             message=message,
-            # async_archive=async_archive,
+            async_archive=async_archive,
         )
 
-    def get_long_term_memories(self, player_id: str, npc_id: Optional[str] = None, limit: int = 20) -> dict[str, Any]:
+    def trim_short_term_memory(
+        self,
+        player_id: str,
+        npc_id: str,
+        remove_count: int,
+    ) -> dict[str, Any]:
+        return self.short_memories.trim_short_term_memory(
+            player_id=player_id,
+            npc_id=npc_id,
+            remove_count=remove_count,
+        )
+
+    def get_long_term_memories(
+        self,
+        player_id: str,
+        npc_id: Optional[str] = None,
+        limit: int = 20,
+        query: str | None = None,
+    ) -> dict[str, Any]:
         if not player_id:
             return _fail("get_long_term_memories", "缺少必要参数 player_id")
-        memories = self.memories.list_long_memories(player_id=player_id, npc_id=npc_id, limit=max(1, min(int(limit), 100)))
+        safe_limit = max(1, min(int(limit), 100))
+        if query and hasattr(self.long_memories, "search_long_memories"):
+            memories = self.long_memories.search_long_memories(
+                player_id=player_id,
+                npc_id=npc_id,
+                query=query,
+                limit=safe_limit,
+            )
+            return _ok(
+                "get_long_term_memories",
+                count=len(memories),
+                memories=memories,
+                query=query,
+                search_mode="semantic",
+            )
+        memories = self.long_memories.list_long_memories(
+            player_id=player_id,
+            npc_id=npc_id,
+            limit=safe_limit,
+        )
         return _ok("get_long_term_memories", count=len(memories), memories=memories)
 
     def create_long_term_memory(
@@ -712,8 +766,24 @@ class CoffeeNpcAgentTools:
             source_message_ids=source_message_ids or [],
             metadata_json=metadata_json or {},
         )
-        memory = self.memories.create_long_memory(data)
+        memory = self.long_memories.create_long_memory(data)
         return _ok("create_long_term_memory", memory=memory)
+
+    def create_long_term_memory_from_messages(
+        self,
+        player_id: str,
+        npc_id: str,
+        messages: list[dict[str, Any]],
+        llm_service: Any | None = None,
+    ) -> dict[str, Any]:
+        if not player_id or not npc_id or not messages:
+            return _fail("create_long_term_memory_from_messages", "缺少必要参数")
+        return self.long_memories.create_long_term_memory_from_messages(
+            player_id=player_id,
+            npc_id=npc_id,
+            messages=messages,
+            llm_service=llm_service or getattr(self, "llm_service", None),
+        )
 
     # ---------- World / Coffee ----------
 

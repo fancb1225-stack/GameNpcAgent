@@ -21,7 +21,8 @@ from typing import Any, Dict, List, Optional, Protocol, Tuple
 
 from patch_ng import debugmode
 
-from service.memory_service_pgvector import MemoryService
+from service.long_memory_service import LongMemoryService
+from service.short_memory_service import ShortMemoryService
 
 try:
     from agent.coffee_npc_agent_tools import CoffeeNpcAgentTools
@@ -152,7 +153,8 @@ class NpcAgent:
         self.llm = llm
         self.max_history = max(1, min(int(max_history), 100))
         self.llm_history: List[Dict[str, str]] = []
-        self.memory_service = MemoryService()
+        self.short_memory_service = ShortMemoryService()
+        self.long_memory_service = LongMemoryService()
 
     def handle_player_message(
         self,
@@ -263,7 +265,7 @@ class NpcAgent:
         if profile_result is not None:
             tool_results["update_player_profile"] = profile_result
 
-        self.memory_service.append_short_term_message(
+        self.short_memory_service.append_short_term_message(
             player_id=player_id,
             npc_id=self.npc_id,
             message={
@@ -272,10 +274,9 @@ class NpcAgent:
                 "session_id": session_id,
                 "timestamp": datetime.now(timezone.utc).isoformat(),
             },
-            llm_service=None,
         )
 
-        archive_result = self.memory_service.append_short_term_message(
+        archive_result = self.short_memory_service.append_short_term_message(
             player_id=player_id,
             npc_id=self.npc_id,
             message={
@@ -288,8 +289,21 @@ class NpcAgent:
                 "relationship_delta": decision.relationship_delta,
                 "timestamp": datetime.now(timezone.utc).isoformat(),
             },
-            llm_service=self.llm,
         )
+
+        if archive_result.get("needs_archive"):
+            long_result = self.long_memory_service.create_long_term_memory_from_messages(
+                player_id=player_id,
+                npc_id=self.npc_id,
+                messages=archive_result.get("archive_messages", []),
+                llm_service=self.llm,
+            )
+            if long_result.get("ok"):
+                self.short_memory_service.trim_short_term_memory(
+                    player_id=player_id,
+                    npc_id=self.npc_id,
+                    remove_count=archive_result.get("archive_message_count", 0),
+                )
 
 
 

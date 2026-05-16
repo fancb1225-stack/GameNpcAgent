@@ -1,8 +1,14 @@
 from typing import Dict, List, Tuple
 from openai import OpenAI
-from anthropic import Anthropic
+try:
+    from anthropic import Anthropic
+except ModuleNotFoundError:
+    Anthropic = None
 
-from agent_config import deepseek_api_key, openai_api_key
+try:
+    from agent.agent_config import deepseek_api_key, openai_api_key
+except ModuleNotFoundError:
+    from agent_config import deepseek_api_key, openai_api_key
 
 class BaseModel:
     def chat(self, prompt: str, history: List[Dict[str, str]], system_prompt: str = "") -> Tuple[
@@ -100,6 +106,8 @@ class DeepSeekV4Flash(BaseModel):
 
 class GLM(BaseModel):
     def __init__(self, api_key: str = openai_api_key) -> None:
+        if Anthropic is None:
+            raise RuntimeError("缺少 anthropic 依赖，无法创建 GLM 模型")
         self.api_key = api_key
         self.client = Anthropic(api_key=api_key, base_url='https://ark.cn-beijing.volces.com/api/coding')
 
@@ -208,6 +216,8 @@ class Kimi(BaseModel):
 
 class Minimax(BaseModel):
     def __init__(self, api_key: str = openai_api_key) -> None:
+        if Anthropic is None:
+            raise RuntimeError("缺少 anthropic 依赖，无法创建 Minimax 模型")
         self.api_key = api_key
         self.client = Anthropic(api_key=api_key, base_url='https://ark.cn-beijing.volces.com/api/coding')
 

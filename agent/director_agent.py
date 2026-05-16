@@ -54,8 +54,10 @@ class DirectorAgent:
         enable_web_search: bool = False,
     ) -> None:
         self.tools = tools or CoffeeNpcAgentTools(enable_web_search=enable_web_search)
-        # 未传入 llm 时默认创建；显式传入 None 时使用图 Agent 的规则降级。
+        # 未显式传入 llm 时创建默认模型；显式传入 None 时走规则降级。
         self.llm = LlmService.getLLM() if llm is DEFAULT_LLM_ARGUMENT else llm
+        if hasattr(self.tools, "llm_service"):
+            self.tools.llm_service = self.llm
         self.sessions: Dict[str, DirectorSession] = {}
         self.npc_agents: Dict[str, NpcGraphAgent] = {}
 
