@@ -13,20 +13,23 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime, timezone
-from typing import Any, Iterable, Sequence, TypeVar
+from typing import Any, TypeVar
 
-from sqlalchemy import Select, and_, delete, select
+from sqlalchemy import Select, delete, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from .hybrid_retrieval import rank_hybrid_results
 from .db_config import (
     Base,
-    CafeEvent,
-    CafeWorldState,
-    CoffeeKnowledge,
+    Event,
+    WorldState,
     DialogueMessage,
     DialogueSession,
     EncounterRule,
+    GameDocument,
+    GameDocumentType,
+    GameSettingChunk,
     LongTermMemory,
     MODEL_REGISTRY,
     MessageRole,
@@ -166,12 +169,6 @@ class DbService:
             self.db.refresh(obj)
         return obj
 
-    def create_by_table_name(self, table_name: str, data: dict[str, Any], commit: bool = True) -> Base:
-        return self.create(self._model(table_name), data, commit=commit)
-
-    def list_by_table_name(self, table_name: str, filters: dict[str, Any] | None = None, limit: int = 50) -> list[Base]:
-        return self.list(self._model(table_name), filters=filters, limit=limit)
-
     def _model(self, table_name: str) -> type[Base]:
         try:
             return MODEL_REGISTRY[table_name]
@@ -192,6 +189,79 @@ class DbService:
     def delete_player(self, player_id: str) -> int:
         return self.delete_by_field(Player, "player_id", player_id)
 
+    # ---------- Game documents ----------
+
+    def create_game_document(
+        self,
+        document_id: str,
+        document_type: str,
+        filename: str,
+        metadata_json: dict[str, Any] | None = None,
+    ) -> GameDocument:
+        document = GameDocument(
+            document_id=document_id,
+            document_type=GameDocumentType(document_type),
+            filename=filename,
+            metadata_json=metadata_json or {},
+        )
+        self.db.add(document)
+        self.db.commit()
+        self.db.refresh(document)
+        return document
+
+    def replace_game_chunks(self, document_id: str, chunks: list[dict[str, Any]]) -> int:
+        self.db.execute(delete(GameSettingChunk).where(GameSettingChunk.document_id == document_id))
+        for chunk in chunks:
+            self.db.add(GameSettingChunk(**chunk))
+        self.db.commit()
+        return len(chunks)
+
+    def search_game_chunks(
+        self,
+        query_embedding: list[float],
+        query: str = "",
+        limit: int = 5,
+    ) -> list[dict[str, Any]]:
+        candidate_limit = max(20, min(max(1, int(limit)) * 10, 200))
+        stmt = (
+            select(
+                GameSettingChunk,
+                GameSettingChunk.embedding.cosine_distance(query_embedding).label("distance"),
+            )
+            .where(GameSettingChunk.embedding.is_not(None))
+            .order_by("distance")
+            .limit(candidate_limit)
+        )
+        rows = self.db.execute(stmt).all()
+        candidates = [
+            {
+                "chunk_id": chunk.chunk_id,
+                "document_id": chunk.document_id,
+                "chunk_index": chunk.chunk_index,
+                "content": chunk.content,
+                "metadata": chunk.metadata_json or {},
+                "distance": float(distance) if distance is not None else None,
+            }
+            for chunk, distance in rows
+        ]
+        ranked = rank_hybrid_results(
+            candidates,
+            query=query,
+            content_getter=lambda item: str(item.get("content") or ""),
+            distance_getter=lambda item: item.get("distance"),
+            limit=limit,
+            vector_weight=0.5,
+            bm25_weight=0.5,
+        )
+        results = []
+        for row in ranked:
+            item = dict(row["item"])
+            item["hybrid_score"] = row["hybrid_score"]
+            item["bm25_score"] = row["bm25_score"]
+            item["vector_score"] = row["vector_score"]
+            results.append(item)
+        return results
+
     # ---------- NPC ----------
 
     def create_npc(self, npc_id: str, name: str, npc_type, role: str, **kwargs) -> Npc:
@@ -208,6 +278,11 @@ class DbService:
 
     def delete_npc(self, npc_id: str) -> int:
         return self.delete_by_field(Npc, "npc_id", npc_id)
+
+    def upsert_npc_from_setting(self, data: dict[str, Any]) -> Npc:
+        npc_id = data["npc_id"]
+        values = {key: value for key, value in data.items() if key != "npc_id"}
+        return self.upsert_by_field(Npc, "npc_id", npc_id, values)
 
     # ---------- Relationship ----------
 
@@ -349,28 +424,17 @@ class DbService:
 
     # ---------- World, event, knowledge, encounter ----------
 
-    def get_world_state(self, session_id: str = "default_morning_session") -> CafeWorldState | None:
-        return self.get_one_by_field(CafeWorldState, "session_id", session_id)
+    def get_world_state(self, session_id: str = "default_morning_session") -> WorldState | None:
+        return self.get_one_by_field(WorldState, "session_id", session_id)
 
-    def update_world_state(self, session_id: str, **kwargs) -> CafeWorldState | None:
-        return self.update_by_field(CafeWorldState, "session_id", session_id, kwargs)
+    def update_world_state(self, session_id: str, **kwargs) -> WorldState | None:
+        return self.update_by_field(WorldState, "session_id", session_id, kwargs)
 
-    def list_active_events(self, time_period=None) -> list[CafeEvent]:
-        stmt = select(CafeEvent).where(CafeEvent.is_active.is_(True))
+    def list_active_events(self, time_period=None) -> list[Event]:
+        stmt = select(Event).where(Event.is_active.is_(True))
         if time_period is not None:
-            stmt = stmt.where(CafeEvent.time_period == time_period)
+            stmt = stmt.where(Event.time_period == time_period)
         return list(self.db.scalars(stmt).all())
-
-    def list_coffee_knowledge(self, category=None, active_only: bool = True, limit: int = 50) -> list[CoffeeKnowledge]:
-        stmt = select(CoffeeKnowledge)
-        conditions = []
-        if category is not None:
-            conditions.append(CoffeeKnowledge.category == category)
-        if active_only:
-            conditions.append(CoffeeKnowledge.is_active.is_(True))
-        if conditions:
-            stmt = stmt.where(and_(*conditions))
-        return list(self.db.scalars(stmt.limit(limit)).all())
 
     def get_encounter_rule(self, time_period) -> EncounterRule | None:
         return self.db.scalar(

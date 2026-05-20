@@ -1,0 +1,62 @@
+# 编排后端 API 服务和带 pgvector 扩展的 PostgreSQL 数据库
+services:
+    postgres:
+        # 使用预装 pgvector 扩展的 PostgreSQL 镜像
+        image: pgvector/pgvector:pg16
+        container_name: game-npc-postgres
+        restart: unless-stopped
+        environment:
+            # 配置数据库账号、密码和默认数据库
+            POSTGRES_DB: coffee_npc_agent
+            POSTGRES_USER: postgres
+            POSTGRES_PASSWORD: root123456
+        ports:
+            # 暴露数据库端口，方便本机调试和数据库客户端连接
+            - "5432:5432"
+        volumes:
+            # 持久化数据库数据，避免容器重建后数据丢失
+            - postgres_data:/var/lib/postgresql/data
+            # 初始化数据库扩展，确保 ORM 可以创建 vector 字段
+            - ./docker/postgres/init:/docker-entrypoint-initdb.d:ro
+        healthcheck:
+            # 使用 pg_isready 检查数据库是否已经可以接收连接
+            test: ["CMD-SHELL", "pg_isready -U postgres -d coffee_npc_agent"]
+            interval: 10s
+            timeout: 5s
+            retries: 5
+            start_period: 10s
+
+    backend:
+        # 使用当前项目根目录中的 Dockerfile 构建后端镜像
+        build:
+            context: .
+            dockerfile: Dockerfile
+        container_name: game-npc-backend
+        restart: unless-stopped
+        depends_on:
+            postgres:
+                # 等待数据库健康后再启动后端
+                condition: service_healthy
+        environment:
+            # 使用 Docker Compose 服务名 postgres 作为数据库主机名
+            DATABASE_URL: postgresql+psycopg://postgres:root123456@postgres:5432/game_npc_frame
+            # 默认启用 LLM；如需规则兜底，可在 .env 中设置 ENABLE_LLM=false
+            ENABLE_LLM: ${ENABLE_LLM:-true}
+            ENABLE_WEB_SEARCH: ${ENABLE_WEB_SEARCH:-false}
+            ENABLE_TOOL_DEBUG_API: ${ENABLE_TOOL_DEBUG_API:-true}
+            CORS_ALLOW_ORIGINS: ${CORS_ALLOW_ORIGINS:-*}
+            LLM_BASE_URL: ${LLM_BASE_URL:-}
+            LLM_API_KEY: ${LLM_API_KEY:-}
+            LLM_MODEL: ${LLM_MODEL:-}
+        ports:
+            # 暴露 FastAPI 服务端口
+            - "8000:8000"
+        command:
+            # 启动前先创建 ORM 表并写入默认种子数据，再运行 API 服务
+            - sh
+            - -c
+            - python -m db.db_init && uvicorn api.main:app --host 0.0.0.0 --port 8000
+
+# 声明数据库持久化卷
+volumes:
+    postgres_data:

@@ -18,14 +18,37 @@ FastAPI backend for CoffeeNpcAgent.
 
 from __future__ import annotations
 
+import logging
+import json
 import os
 from contextlib import asynccontextmanager
-from typing import Any, Dict, List, Optional
+from pathlib import Path
+
+_log_dir = Path(__file__).resolve().parent.parent / "output"
+_log_dir.mkdir(exist_ok=True)
+_log_file = _log_dir / "logs.txt"
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)s [%(name)s] %(message)s",
+    handlers=[
+        logging.FileHandler(_log_file, encoding="utf-8"),
+        logging.StreamHandler(),
+    ],
+    force=True,
+)
+from typing import Any, Dict, Iterator, List, Optional
 
 import uvicorn
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, File, HTTPException, Query, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
+
+from service.game_document_service import GameDocumentService
+from service.npc_setting_import_service import NpcSettingImportService
+from service.npc_service import NpcService
+from service.pdf_reader_service import PdfReaderService
 
 try:
     from agent.director_agent import DirectorAgent
@@ -36,7 +59,7 @@ except Exception as exc:  # pragma: no cover
     ) from exc
 
 
-class MorningCafeRequest(BaseModel):
+class SessionCreateRequest(BaseModel):
     player_id: str = Field(..., min_length=1, description="玩家业务 ID")
     nickname: Optional[str] = Field(default=None, description="玩家昵称")
     session_id: Optional[str] = Field(default=None, description="可选会话 ID，不传则自动生成")
@@ -64,10 +87,30 @@ class ToolInvokeRequest(BaseModel):
     arguments: Dict[str, Any] = Field(default_factory=dict)
 
 
+class RagSearchRequest(BaseModel):
+    query: str = Field(..., min_length=1, description="要检索的游戏设定问题")
+    limit: int = Field(default=5, ge=1, le=20, description="返回片段数量")
+
+
 class ApiResponse(BaseModel):
     ok: bool
     data: Optional[Dict[str, Any]] = None
     error: Optional[str] = None
+
+
+COFFEE_TOOL_NAMES = {
+    "enter_morning_cafe",
+    "get_cafe_events",
+    "get_coffee_knowledge",
+    "get_world_state",
+    "update_world_state",
+}
+
+
+def _public_tools(director: DirectorAgent) -> list[str]:
+    """返回对前端公开的非咖啡场景工具列表。"""
+
+    return [tool for tool in director.list_available_tools() if tool not in COFFEE_TOOL_NAMES]
 
 
 def _create_llm_if_enabled() -> Optional[Any]:
@@ -79,8 +122,12 @@ def _create_llm_if_enabled() -> Optional[Any]:
     禁用方式：
     ENABLE_LLM=false
     """
+    import logging
+    _log = logging.getLogger(__name__)
+
     disabled = os.getenv("ENABLE_LLM", "true").lower() in {"0", "false", "no", "n", "off"}
     if disabled:
+        _log.warning("[_create_llm_if_enabled] ENABLE_LLM=false，LLM 已禁用")
         return None
 
     try:
@@ -88,7 +135,13 @@ def _create_llm_if_enabled() -> Optional[Any]:
     except Exception as exc:  # pragma: no cover
         raise RuntimeError("ENABLE_LLM=true，但无法导入 llm_service.py ") from exc
 
-    return LlmService.getLLM()
+    try:
+        llm = LlmService.getLLM()
+        _log.info("[_create_llm_if_enabled] LLM 创建成功: %s", type(llm).__name__)
+        return llm
+    except Exception:
+        _log.exception("[_create_llm_if_enabled] LLM 创建失败，将走规则降级")
+        return None
 
 
 @asynccontextmanager
@@ -105,8 +158,8 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(
-    title="CoffeeNpcAgent API",
-    description="咖啡厅 NPC Agent 的最小 FastAPI 后端接口。",
+    title="GameNpcFrame API",
+    description="面向游戏 NPC 框架的 FastAPI 后端接口。",
     version="0.1.0",
     lifespan=lifespan,
 )
@@ -125,6 +178,11 @@ def get_director() -> DirectorAgent:
     if director is None:
         raise HTTPException(status_code=500, detail="DirectorAgent 未初始化")
     return director
+
+
+def _ensure_pdf(file: UploadFile) -> None:
+    if not file.filename or not file.filename.lower().endswith(".pdf"):
+        raise HTTPException(status_code=400, detail="仅支持上传 PDF 文件")
 
 
 def _return_or_raise(result: Dict[str, Any], status_code: int = 400) -> Dict[str, Any]:
@@ -152,23 +210,82 @@ def health() -> ApiResponse:
     return ApiResponse(
         ok=True,
         data={
-            "service": "CoffeeNpcAgent API",
+            "service": "GameNpcFrame API",
             "api": "running",
             "database_or_tools": db_result,
-            "available_tools": director.list_available_tools(),
+            "available_tools": _public_tools(director),
         },
     )
 
 
-@app.post("/scene/morning", response_model=ApiResponse)
-def enter_morning_cafe(request: MorningCafeRequest) -> ApiResponse:
-    """进入固定上午咖啡厅场景，创建或恢复一个会话。"""
+@app.post("/documents/game-settings/upload", response_model=ApiResponse)
+async def upload_game_setting_pdf(file: UploadFile = File(...)) -> ApiResponse:
+    """上传游戏设定 PDF，抽取文本后切分并写入 RAG 知识库。"""
+
+    _ensure_pdf(file)
+    content = await file.read()
+    text = PdfReaderService().extract_text(content)
+    result = GameDocumentService().ingest_game_setting_text(
+        filename=file.filename or "game_setting.pdf",
+        text=text,
+        metadata={"content_type": file.content_type},
+    )
+    if result.get("ok") is False:
+        return ApiResponse(ok=False, error=str(result.get("error")))
+    return ApiResponse(ok=True, data=result)
+
+
+@app.post("/documents/npc-settings/upload", response_model=ApiResponse)
+async def upload_npc_setting_pdf(file: UploadFile = File(...)) -> ApiResponse:
+    """上传 NPC 设定 PDF，由 Agent 识别结构并通过 ORM 写入 NPC 表。"""
+
+    _ensure_pdf(file)
+    content = await file.read()
+    text = PdfReaderService().extract_text(content)
+    director = get_director()
+    result = NpcSettingImportService(
+        llm_service=getattr(director, "llm", None),
+    ).import_npc_setting_text(text)
+    if result.get("ok") is False:
+        return ApiResponse(ok=False, error=str(result.get("error")))
+    return ApiResponse(ok=True, data=result)
+
+
+@app.post("/rag/game-settings/search", response_model=ApiResponse)
+def search_game_setting_context(request: RagSearchRequest) -> ApiResponse:
+    """检索游戏设定 RAG 上下文，供调试或对话注入使用。"""
+
+    result = GameDocumentService().search_game_settings(
+        query=request.query,
+        limit=request.limit,
+    )
+    if result.get("ok") is False:
+        return ApiResponse(ok=False, error=str(result.get("error")))
+    return ApiResponse(ok=True, data=result)
+
+
+@app.post("/sessions", response_model=ApiResponse)
+def create_session(request: SessionCreateRequest) -> ApiResponse:
+    """创建或恢复一个通用 NPC 对话会话。"""
     result = get_director().enter_morning_cafe(
         player_id=request.player_id,
         nickname=request.nickname,
         session_id=request.session_id,
     )
-    return ApiResponse(ok=True, data=_return_or_raise(result))
+    data = _return_or_raise(result)
+    raw_result = data.get("result", data)
+    session = dict(raw_result.get("session") or {})
+    session.pop("scene", None)
+    session.pop("time_period", None)
+    return ApiResponse(
+        ok=True,
+        data={
+            "result": {
+                "player": raw_result.get("player"),
+                "session": session,
+            }
+        },
+    )
 
 
 @app.post("/sessions/{session_id}/select-npc", response_model=ApiResponse)
@@ -188,6 +305,46 @@ def send_dialogue_message(request: DialogueRequest) -> ApiResponse:
         npc_id=request.npc_id,
     )
     return ApiResponse(ok=True, data=_return_or_raise(result))
+
+
+def _sse_event(event_name: str, data: Dict[str, Any]) -> str:
+    # 将结构化数据编码为 SSE 事件，供前端逐条解析。
+    payload = json.dumps(data, ensure_ascii=False, default=str)
+    return f"event: {event_name}\ndata: {payload}\n\n"
+
+
+def _split_reply_chunks(reply: str, chunk_size: int = 8) -> Iterator[str]:
+    # 第一版使用固定长度分片，后续可替换为模型原生 token streaming。
+    text = reply or ""
+    for index in range(0, len(text), chunk_size):
+        yield text[index:index + chunk_size]
+
+
+def _stream_dialogue_result(request: DialogueRequest) -> Iterator[str]:
+    # 复用现有对话链路，确保数据库写入和普通接口行为一致。
+    try:
+        result = get_director().talk(
+            player_id=request.player_id,
+            session_id=request.session_id,
+            message=request.message,
+            npc_id=request.npc_id,
+        )
+        data = _return_or_raise(result)
+        reply = data.get("reply") or data.get("decision", {}).get("line") or ""
+        for chunk in _split_reply_chunks(str(reply)):
+            yield _sse_event("chunk", {"content": chunk})
+        yield _sse_event("done", data)
+    except Exception as exc:
+        yield _sse_event("error", {"error": str(exc)})
+
+
+@app.post("/dialogue/messages/stream")
+def stream_dialogue_message(request: DialogueRequest) -> StreamingResponse:
+    """以 SSE 流式返回 NPC 回复，同时复用完整消息保存链路。"""
+    return StreamingResponse(
+        _stream_dialogue_result(request),
+        media_type="text/event-stream",
+    )
 
 
 @app.post("/npcs/{npc_id}/messages", response_model=ApiResponse)
@@ -243,6 +400,20 @@ def get_npc_state(npc_id: str) -> ApiResponse:
     return ApiResponse(ok=True, data=_return_or_raise(result))
 
 
+@app.delete("/npcs/{npc_id}", response_model=ApiResponse)
+def delete_npc(npc_id: str) -> ApiResponse:
+    """删除指定 NPC。"""
+
+    service = NpcService()
+    try:
+        deleted_count = service.delete_npc(npc_id)
+    finally:
+        service.close()
+    if deleted_count <= 0:
+        raise HTTPException(status_code=404, detail=f"未找到 NPC: {npc_id}")
+    return ApiResponse(ok=True, data={"npc_id": npc_id, "deleted_count": deleted_count})
+
+
 @app.get("/dialogue/history", response_model=ApiResponse)
 def get_dialogue_history(
     player_id: str = Query(..., min_length=1, description="玩家 ID"),
@@ -269,39 +440,13 @@ def get_dialogue_history(
         db.close()
 
 
-@app.get("/world-state/{session_id}", response_model=ApiResponse)
-def get_world_state(session_id: str) -> ApiResponse:
-    """查询指定会话的咖啡厅世界状态。"""
-    result = get_director().invoke_tool("get_world_state", {"session_id": session_id})
-    return ApiResponse(ok=True, data=_return_or_raise(result))
-
-
-@app.get("/coffee-knowledge", response_model=ApiResponse)
-def get_coffee_knowledge(
-    query: Optional[str] = Query(default=None, description="可选查询文本"),
-    category: Optional[str] = Query(
-        default=None,
-        description="可选分类：bean / brew / milk / flavor / menu",
-    ),
-    limit: int = Query(default=10, ge=1, le=50),
-) -> ApiResponse:
-    """查询咖啡知识库。"""
-    args: Dict[str, Any] = {"limit": limit}
-    if query is not None:
-        args["query"] = query
-    if category is not None:
-        args["category"] = category
-    result = get_director().invoke_tool("get_coffee_knowledge", args)
-    return ApiResponse(ok=True, data=_return_or_raise(result))
-
-
 @app.get("/tools", response_model=ApiResponse)
 def list_tools() -> ApiResponse:
     """列出当前 Agent 可用工具。"""
     director = get_director()
     return ApiResponse(
         ok=True,
-        data={"tools": director.list_available_tools()},
+        data={"tools": _public_tools(director)},
     )
 
 
@@ -315,8 +460,15 @@ def invoke_tool(request: ToolInvokeRequest) -> ApiResponse:
     if os.getenv("ENABLE_TOOL_DEBUG_API", "true").lower() not in {"1", "true", "yes", "y"}:
         raise HTTPException(status_code=403, detail="工具调试接口未开启")
 
+    if request.tool_name in COFFEE_TOOL_NAMES:
+        raise HTTPException(status_code=404, detail=f"工具已不再公开: {request.tool_name}")
+
     result = get_director().invoke_tool(request.tool_name, request.arguments)
     return ApiResponse(ok=True, data=_return_or_raise(result))
+
+# @app.get("/", response_model=ApiResponse)
+# def index():
+#     return template.TemplateResponse("./frontend/index.html", {"request": None, "message": "Welcome to GameNpcFrame API!"})
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000)

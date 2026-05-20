@@ -1,719 +1,478 @@
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
-<meta charset="UTF-8"/>
-<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-<title>CoffeeNpcAgent</title>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>GameNpcFrame</title>
 <style>
-*{margin:0;padding:0;box-sizing:border-box}
-:root{
-  --wechat-green:#07c160;--wechat-green-dark:#06ad56;
-  --bg:#ededed;--chat-bg:#f0f0f0;--surface:#fff;--card:#fff;
-  --border:#e0e0e0;--border-light:#ececec;
-  --text:#333;--text2:#888;--text3:#b2b2b2;
-  --bubble-self:#95ec69;--bubble-self-text:#000;
-  --bubble-other:#fff;--bubble-other-text:#000;
-  --header-bg:#ededed;--header-text:#000;
-  --input-bg:#f7f7f7;--input-border:#e0e0e0;
-  --radius:6px;
+*{box-sizing:border-box}
+body{
+  margin:0;
+  font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Microsoft YaHei",sans-serif;
+  background:#f4f6f8;
+  color:#1f2933;
+  height:100vh;
+  overflow:hidden;
 }
-body{font-family:-apple-system,BlinkMacSystemFont,'Helvetica Neue','PingFang SC','Microsoft YaHei',sans-serif;background:var(--bg);color:var(--text);height:100vh;overflow:hidden;font-size:14px}
-button{cursor:pointer;border:none;border-radius:var(--radius);padding:8px 16px;font-size:14px;transition:.15s}
-input,select,textarea{border:1px solid var(--input-border);border-radius:var(--radius);padding:8px 12px;background:#fff;color:var(--text);font-size:14px;outline:none}
-input:focus,select:focus,textarea:focus{border-color:var(--wechat-green)}
-
-/* ─── layout ─── */
-.app{display:grid;grid-template-columns:260px 1fr 300px;grid-template-rows:auto 1fr;height:100vh;gap:0}
-
-/* ─── header ─── */
-.header{grid-column:1/-1;background:var(--header-bg);padding:10px 20px;display:flex;align-items:center;gap:14px;border-bottom:1px solid var(--border)}
-.header h1{font-size:17px;font-weight:600;color:var(--text)}
-.header .status{font-size:11px;padding:2px 8px;border-radius:10px;background:#e0e0e0;color:var(--text2)}
-.header .status.ok{background:#d4f5d4;color:var(--wechat-green-dark)}
-
-/* ─── left panel (contacts style) ─── */
-.left{background:var(--surface);border-right:1px solid var(--border);overflow-y:auto;display:flex;flex-direction:column}
-.left-section{padding:14px 16px;border-bottom:1px solid var(--border-light)}
-.left-section:last-child{border-bottom:none}
-.section-title{font-size:13px;font-weight:600;color:var(--text2);margin-bottom:10px}
-.field{margin-bottom:8px}
-.field label{display:block;font-size:12px;color:var(--text2);margin-bottom:3px}
-.field input,.field select{width:100%;background:var(--input-bg);border-color:var(--border-light)}
-.btn{width:100%;background:var(--wechat-green);color:#fff;font-weight:500;border-radius:4px}
-.btn:hover{background:var(--wechat-green-dark)}
-.btn.primary{background:var(--wechat-green)}
-.btn.primary:hover{background:var(--wechat-green-dark)}
-.btn.sm{padding:6px 12px;font-size:12px;width:auto;background:var(--wechat-green);color:#fff}
-.btn:disabled{opacity:.4;cursor:not-allowed}
-.btn.ghost{background:var(--input-bg);color:var(--text2)}
-.btn.ghost:hover{background:var(--border-light);color:var(--text)}
-
-/* ─── npc list (contact list) ─── */
-.npc-list{display:flex;flex-direction:column}
-.npc-card{display:flex;align-items:center;gap:10px;padding:12px 16px;cursor:pointer;border-bottom:1px solid var(--border-light);transition:background .1s}
-.npc-card:hover{background:#f5f5f5}
-.npc-card.active{background:#d9d9d9}
-.npc-avatar{width:40px;height:40px;border-radius:4px;background:var(--wechat-green);color:#fff;display:flex;align-items:center;justify-content:center;font-size:18px;font-weight:600;flex-shrink:0}
-.npc-avatar.staff{background:#576b95}
-.npc-avatar.customer{background:#fa9d3b}
-.npc-avatar.passerby{background:#a0a0a0}
-.npc-info-wrap{flex:1;min-width:0}
-.npc-info-wrap .name{font-size:15px;font-weight:500;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.npc-info-wrap .role{font-size:12px;color:var(--text2);margin-top:1px}
-.npc-info-wrap .emotion{font-size:11px;color:var(--text3);margin-top:1px}
-
-/* ─── center: chat area (wechat conversation) ─── */
-.center{display:flex;flex-direction:column;background:var(--chat-bg);min-height:0;overflow:hidden}
-.chat-header{padding:12px 20px;background:var(--header-bg);border-bottom:1px solid var(--border);display:flex;align-items:center;gap:12px}
-.chat-header .npc-name{font-weight:600;font-size:16px;color:var(--text)}
-.chat-header .npc-info{font-size:12px;color:var(--text2)}
-.messages{flex:1;overflow-y:auto;padding:14px 16px;display:flex;flex-direction:column;gap:14px}
-
-/* message bubbles */
-.msg{max-width:70%;padding:10px 14px;font-size:15px;line-height:1.5;position:relative;word-break:break-word}
-.msg.player{align-self:flex-end;background:var(--bubble-self);color:var(--bubble-self-text);border-radius:4px 0 4px 4px}
-.msg.player::after{content:'';position:absolute;right:-6px;top:10px;border:6px solid transparent;border-left-color:var(--bubble-self);border-right:0}
-.msg.npc{align-self:flex-start;background:var(--bubble-other);color:var(--bubble-other-text);border-radius:0 4px 4px 4px;box-shadow:0 1px 1px rgba(0,0,0,.04)}
-.msg.npc::after{content:'';position:absolute;left:-6px;top:10px;border:6px solid transparent;border-right-color:var(--bubble-other);border-left:0}
-.msg.npc .meta{font-size:11px;color:var(--text2);margin-top:6px;display:flex;gap:6px;flex-wrap:wrap}
-.msg.npc .meta span{background:var(--chat-bg);padding:2px 8px;border-radius:10px;font-size:10px}
-.msg.system{align-self:center;background:transparent;color:var(--text3);font-size:12px;padding:4px 12px;max-width:90%}
-.msg.history{opacity:.6}
-.history-divider{align-self:center;display:flex;align-items:center;gap:8px;width:60%;margin:4px 0;color:var(--text3);font-size:11px}
-.history-divider::before,.history-divider::after{content:'';flex:1;border-top:1px solid var(--border)}
-
-/* typing indicator */
-.typing{align-self:flex-start;color:var(--text2);font-size:13px;padding:8px 14px}
-.typing::after{content:'...';animation:dots 1s steps(3) infinite}
-@keyframes dots{0%{content:'.'}33%{content:'..'}66%{content:'...'}}
-
-/* chat input bar */
-.chat-input{padding:10px 16px;background:var(--input-bg);border-top:1px solid var(--border);display:flex;gap:10px;align-items:center}
-.chat-input input{flex:1;background:#fff;border:1px solid var(--border);border-radius:4px;padding:8px 12px;font-size:15px}
-.chat-input button{background:var(--wechat-green);color:#fff;font-weight:500;border-radius:4px;min-width:64px;padding:8px 16px;font-size:15px}
-.chat-input button:hover{background:var(--wechat-green-dark)}
-
-/* ─── right panel (detail drawer) ─── */
-.right{background:var(--surface);border-left:1px solid var(--border);overflow-y:auto;padding:0;font-size:13px}
-.tab-bar{display:flex;background:var(--header-bg);border-bottom:1px solid var(--border)}
-.tab{flex:1;padding:10px 0;cursor:pointer;font-size:13px;color:var(--text2);text-align:center;border-bottom:2px solid transparent;transition:.15s}
-.tab:hover{color:var(--text)}
-.tab.active{color:var(--wechat-green);border-bottom-color:var(--wechat-green)}
-.tab-content{display:none;padding:14px 16px}
+button,input,textarea{font:inherit}
+button{border:0;border-radius:6px;padding:8px 12px;background:#2563eb;color:#fff;cursor:pointer}
+button.secondary{background:#475569}
+button.success{background:#15803d}
+button.danger{background:#b91c1c}
+button:disabled{opacity:.5;cursor:not-allowed}
+input,textarea{
+  border:1px solid #cbd5e1;
+  border-radius:6px;
+  padding:8px;
+  background:#fff;
+  color:#1f2933;
+}
+.app{
+  display:grid;
+  grid-template-columns:300px 1fr 340px;
+  grid-template-rows:52px 1fr;
+  height:100vh;
+}
+.top{
+  grid-column:1/-1;
+  display:flex;
+  align-items:center;
+  gap:14px;
+  padding:0 18px;
+  background:#111827;
+  color:#f8fafc;
+}
+.top h1{font-size:18px;margin:0;font-weight:650}
+.top input{width:240px;padding:5px 8px}
+.status{font-size:12px;color:#cbd5e1}
+.panel{overflow:auto;background:#fff;border-right:1px solid #d8dee8}
+.panel.right{border-left:1px solid #d8dee8;border-right:0}
+.section{padding:14px;border-bottom:1px solid #e5e9f0}
+.section h2{font-size:14px;margin:0 0 10px;color:#334155}
+.field{display:grid;gap:5px;margin-bottom:10px}
+.field label{font-size:12px;color:#64748b}
+.field input,.field textarea{width:100%}
+.upload-row{
+  display:grid;
+  grid-template-columns:1fr auto;
+  gap:8px;
+  align-items:center;
+  margin-bottom:8px;
+}
+.result{font-size:12px;line-height:1.5;color:#475569;white-space:pre-wrap}
+.npc-list{display:grid;gap:6px}
+.npc-item{padding:10px;border:1px solid #d8dee8;border-radius:6px;background:#f8fafc;cursor:pointer}
+.npc-item.active{border-color:#2563eb;background:#eff6ff}
+.npc-row{display:flex;gap:8px;align-items:flex-start;justify-content:space-between}
+.npc-row button{padding:5px 8px;font-size:12px;white-space:nowrap}
+.npc-name{font-weight:650}
+.npc-role{font-size:12px;color:#64748b;margin-top:2px}
+.chat{display:flex;flex-direction:column;min-width:0;min-height:0;background:#eef2f7}
+.chat-head{
+  height:48px;
+  display:flex;
+  align-items:center;
+  gap:10px;
+  padding:0 16px;
+  background:#fff;
+  border-bottom:1px solid #d8dee8;
+}
+.messages{
+  flex:1;
+  min-height:0;
+  overflow-y:auto;
+  padding:16px;
+  display:flex;
+  flex-direction:column;
+  gap:10px;
+}
+.msg{max-width:72%;padding:10px 12px;border-radius:8px;line-height:1.5;white-space:pre-wrap}
+.msg.player{align-self:flex-end;background:#dcfce7;color:#14532d}
+.msg.npc{align-self:flex-start;background:#fff;color:#1f2933;border:1px solid #d8dee8}
+.msg.system{align-self:center;max-width:90%;background:transparent;color:#64748b;font-size:12px}
+.msg-meta{margin-top:5px;font-size:11px;color:#64748b}
+.chat-input{display:flex;gap:10px;padding:12px;background:#fff;border-top:1px solid #d8dee8}
+.chat-input input{flex:1}
+.tabs{display:flex;border-bottom:1px solid #d8dee8;background:#f8fafc}
+.tab{flex:1;padding:10px;border-radius:0;background:transparent;color:#475569}
+.tab.active{background:#fff;color:#2563eb;border-bottom:2px solid #2563eb}
+.tab-content{display:none;padding:14px}
 .tab-content.active{display:block}
-.data-block{background:var(--input-bg);border-radius:var(--radius);padding:10px 12px;margin-bottom:8px}
-.data-block .key{color:var(--text2);font-weight:600;font-size:12px}
-.data-block .val{color:var(--text);word-break:break-all;margin-top:2px}
-.data-block .val pre{font-size:12px;white-space:pre-wrap;margin:0;font-family:Menlo,Consolas,monospace}
-.rel-bar{display:flex;align-items:center;gap:8px;margin-bottom:6px}
-.rel-bar .label{width:40px;text-align:right;font-size:12px;color:var(--text2)}
-.rel-bar .bar{flex:1;height:6px;background:#e0e0e0;border-radius:3px;overflow:hidden}
-.rel-bar .bar .fill{height:100%;border-radius:3px;transition:width .3s}
-.rel-bar .num{width:30px;font-size:12px;color:var(--text2)}
-.tool-item{background:var(--input-bg);border-radius:var(--radius);padding:8px 12px;margin-bottom:4px;font-size:12px;cursor:pointer;transition:.1s}
-.tool-item:hover{background:var(--border-light)}
-.tool-item .tname{color:var(--wechat-green-dark);font-weight:600}
-.tool-item .tdesc{color:var(--text2);margin-top:2px}
-.know-item{background:var(--input-bg);border-radius:var(--radius);padding:8px 12px;margin-bottom:4px;font-size:12px}
-.know-item .ktitle{color:var(--wechat-green-dark);font-weight:600}
-.know-item .kcat{color:var(--text2);font-size:11px}
-
-/* ─── empty state ─── */
-.empty-state{display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;color:var(--text3);gap:10px}
-.empty-state .icon{font-size:52px;opacity:.25}
-.empty-state .text{font-size:14px}
-
-/* ─── scrollbar (subtle) ─── */
-::-webkit-scrollbar{width:4px}
-::-webkit-scrollbar-track{background:transparent}
-::-webkit-scrollbar-thumb{background:#c0c0c0;border-radius:2px}
-::-webkit-scrollbar-thumb:hover{background:#a0a0a0}
+.data{background:#f8fafc;border:1px solid #d8dee8;border-radius:6px;padding:10px;margin-bottom:8px}
+.data b{display:block;font-size:12px;color:#64748b;margin-bottom:4px}
+pre{white-space:pre-wrap;word-break:break-word;margin:0;font-size:12px}
+@media (max-width:1100px){
+  .app{grid-template-columns:280px 1fr;grid-template-rows:52px 1fr 320px}
+  .panel.right{grid-column:1/-1;border-left:0;border-top:1px solid #d8dee8}
+}
 </style>
 </head>
 <body>
 <div class="app">
-  <!-- header -->
-  <div class="header">
-    <h1>CoffeeNpcAgent</h1>
-    <div class="status" id="connStatus">未连接</div>
-    <div style="flex:1"></div>
-    <span style="font-size:12px;color:var(--text2)">API:</span>
-    <input id="apiBase" value="http://localhost:8000" style="width:200px;font-size:12px;padding:4px 8px"/>
-  </div>
+  <header class="top">
+    <h1>GameNpcFrame</h1>
+    <span class="status" id="status">未连接</span>
+    <span style="flex:1"></span>
+    <span class="status">API</span>
+    <input id="apiBase" value="http://localhost:8000">
+    <button class="secondary" onclick="checkHealth()">检查</button>
+  </header>
 
-  <!-- left: contacts panel -->
-  <div class="left">
-    <div class="left-section">
-      <div class="section-title">场景入口</div>
+  <aside class="panel">
+    <div class="section">
+      <h2>文档导入</h2>
+      <div class="field">
+        <label>游戏设定 PDF</label>
+        <div class="upload-row">
+          <input id="gameSettingFile" type="file" accept="application/pdf">
+          <button onclick="uploadPdf('game')">上传</button>
+        </div>
+      </div>
+      <div class="field">
+        <label>NPC 设定 PDF</label>
+        <div class="upload-row">
+          <input id="npcSettingFile" type="file" accept="application/pdf">
+          <button class="success" onclick="uploadPdf('npc')">上传</button>
+        </div>
+      </div>
+      <div class="result" id="uploadResult">等待上传设定文档。</div>
+    </div>
+
+    <div class="section">
+      <h2>会话</h2>
       <div class="field">
         <label>玩家 ID</label>
-        <input id="playerId" value="p001" placeholder="player_id"/>
+        <input id="playerId" value="p001">
       </div>
       <div class="field">
         <label>昵称</label>
-        <input id="nickname" value="测试玩家" placeholder="nickname"/>
+        <input id="nickname" value="测试玩家">
       </div>
       <div class="field">
-        <label>会话 ID (可选)</label>
-        <input id="sessionId" placeholder="留空自动生成"/>
+        <label>会话 ID</label>
+        <input id="sessionId" placeholder="留空自动生成">
       </div>
-      <button class="btn primary" onclick="enterMorningCafe()">进入上午咖啡厅</button>
+      <button onclick="enterScene()">进入默认场景</button>
     </div>
 
-    <div class="left-section" style="flex:1;overflow-y:auto;padding:0">
-      <div style="padding:10px 16px 6px"><div class="section-title">NPC 列表</div></div>
-      <div class="npc-list" id="npcList">
-        <div style="color:var(--text3);font-size:12px;padding:12px 16px">加载中...</div>
-      </div>
-      <div style="padding:8px 16px">
-        <button class="btn ghost" onclick="loadNpcList()" style="font-size:12px">刷新列表</button>
-      </div>
+    <div class="section">
+      <h2>NPC</h2>
+      <button class="secondary" onclick="loadNpcs()">刷新 NPC</button>
+      <div class="npc-list" id="npcList" style="margin-top:10px"></div>
     </div>
+  </aside>
 
-    <div class="left-section">
-      <button class="btn ghost" onclick="refreshSnapshot()" style="margin-bottom:4px;font-size:12px">刷新场景快照</button>
-      <button class="btn ghost" onclick="checkHealth()" style="margin-bottom:4px;font-size:12px">健康检查</button>
-      <button class="btn ghost" onclick="loadTools()" style="font-size:12px">查看工具列表</button>
-    </div>
-  </div>
-
-  <!-- center: chat -->
-  <div class="center">
-    <div class="chat-header">
-      <span class="npc-name" id="chatNpcName">CoffeeNpcAgent</span>
-      <span class="npc-info" id="chatNpcInfo">选择一位NPC开始对话</span>
-      <div style="flex:1"></div>
-      <button class="btn sm" onclick="loadHistoryMessages()" id="btnLoadHistory" style="display:none;font-size:11px;padding:4px 10px">历史记录</button>
+  <main class="chat">
+    <div class="chat-head">
+      <b id="chatTitle">请选择 NPC</b>
+      <span class="status" id="chatSub">游戏 NPC 对话调试</span>
     </div>
     <div class="messages" id="messages">
-      <div class="empty-state">
-        <div class="icon">&#9749;</div>
-        <div class="text">欢迎来到咖啡厅</div>
-        <div class="text" style="font-size:12px">先在左侧进入场景，然后选择一位NPC聊天</div>
+      <div class="msg system">
+        上传设定后，NPC 对话会检索游戏设定片段作为 RAG 上下文。
       </div>
     </div>
     <div class="chat-input">
-      <input id="chatInput" placeholder="输入消息..." onkeydown="if(event.key==='Enter')sendMessage()"/>
+      <input
+        id="messageInput"
+        placeholder="输入玩家消息"
+        onkeydown="if(event.key==='Enter')sendMessage()"
+      >
       <button onclick="sendMessage()">发送</button>
     </div>
-  </div>
+  </main>
 
-  <!-- right: detail drawer -->
-  <div class="right">
-    <div class="tab-bar">
-      <div class="tab active" onclick="switchTab('world')">世界</div>
-      <div class="tab" onclick="switchTab('npc')">NPC</div>
-      <div class="tab" onclick="switchTab('player')">玩家</div>
-      <div class="tab" onclick="switchTab('tools')">工具</div>
-      <div class="tab" onclick="switchTab('coffee')">咖啡</div>
+  <aside class="panel right">
+    <div class="tabs">
+      <button class="tab active" onclick="switchTab(event,'rag')">RAG</button>
+      <button class="tab" onclick="switchTab(event,'npc')">NPC</button>
+      <button class="tab" onclick="switchTab(event,'raw')">原始</button>
     </div>
-
-    <div class="tab-content active" id="tab-world">
-      <div id="worldContent" style="color:var(--text3);font-size:12px">暂无数据</div>
+    <div class="tab-content active" id="tab-rag">
+      <div class="field">
+        <label>检索游戏设定</label>
+        <textarea id="ragQuery" rows="4" placeholder="输入要检索的设定问题"></textarea>
+      </div>
+      <button onclick="searchRag()">检索</button>
+      <div id="ragResult" style="margin-top:10px"></div>
     </div>
     <div class="tab-content" id="tab-npc">
-      <div id="npcContent" style="color:var(--text3);font-size:12px">选择NPC后查看详情</div>
+      <div id="npcDetail" class="result">尚未选择 NPC。</div>
     </div>
-    <div class="tab-content" id="tab-player">
-      <div id="playerContent" style="color:var(--text3);font-size:12px">进入场景后查看玩家信息</div>
+    <div class="tab-content" id="tab-raw">
+      <pre id="rawOutput">暂无数据</pre>
     </div>
-    <div class="tab-content" id="tab-tools">
-      <div id="toolsContent" style="color:var(--text3);font-size:12px">点击"查看工具列表"加载</div>
-    </div>
-    <div class="tab-content" id="tab-coffee">
-      <div class="field" style="margin-bottom:8px">
-        <input id="coffeeQuery" placeholder="搜索咖啡知识..."/>
-      </div>
-      <div class="field" style="margin-bottom:8px">
-        <select id="coffeeCategory">
-          <option value="">全部分类</option>
-          <option value="bean">bean</option>
-          <option value="brew">brew</option>
-          <option value="milk">milk</option>
-          <option value="flavor">flavor</option>
-          <option value="menu">menu</option>
-        </select>
-      </div>
-      <button class="btn sm" onclick="searchCoffee()" style="margin-bottom:10px">搜索</button>
-      <div id="coffeeContent"></div>
-    </div>
-  </div>
+  </aside>
 </div>
 
 <script>
-// ─── State ────────────────────────────────────────────────
-const state = {
-  currentSessionId: null,
-  currentPlayerId: null,
-  currentNpcId: null,
-  npcs: [],
-  sending: false,
-};
-
-// ─── Helpers ──────────────────────────────────────────────
+const state = { sessionId: "", playerId: "", npcId: "", npcs: [] };
 const $ = id => document.getElementById(id);
-const api = () => $('apiBase').value.replace(/\/+$/, '');
+const api = () => $("apiBase").value.replace(/\/+$/, "");
 
-async function request(method, path, body) {
-  const opts = { method, headers: { 'Content-Type': 'application/json' } };
-  if (body) opts.body = JSON.stringify(body);
-  const res = await fetch(api() + path, opts);
-  const json = await res.json();
-  if (!json.ok) throw new Error(json.error || JSON.stringify(json.data) || '请求失败');
-  return json.data;
+function showSystem(text){addMessage("system", text)}
+function setRaw(data){$("rawOutput").textContent=JSON.stringify(data,null,2)}
+function clearMessages(){
+  // 清空当前聊天窗口，供切换 NPC 或重载历史时使用。
+  $("messages").innerHTML="";
 }
-
-function dig(obj, ...paths) {
-  for (const p of paths) {
-    let cur = obj;
-    for (const key of p.split('.')) {
-      if (cur == null || typeof cur !== 'object') { cur = undefined; break; }
-      cur = cur[key];
-    }
-    if (cur != null) return cur;
+function formatLatency(value){
+  // 将后端保存的毫秒耗时格式化为聊天气泡中的短文本。
+  const ms=Number(value);
+  if(!Number.isFinite(ms))return "";
+  return `耗时 ${(ms/1000).toFixed(2)} 秒`;
+}
+function setMessageLatency(el,latencyMs){
+  // 在 NPC 气泡底部展示实际回复耗时，玩家和系统消息默认不展示。
+  const text=formatLatency(latencyMs);
+  if(!text)return;
+  let meta=el.querySelector(".msg-meta");
+  if(!meta){
+    meta=document.createElement("div");
+    meta.className="msg-meta";
+    el.appendChild(meta);
   }
-  return undefined;
+  meta.textContent=text;
 }
-
-function formatTime(ts) {
-  if (!ts) return '';
-  const d = new Date(ts);
-  return d.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+function appendMessageText(el,text){
+  // 流式接收片段时只追加正文，保留底部耗时区域。
+  const content=el.querySelector(".msg-content") || el;
+  content.textContent+=text;
+  $("messages").scrollTop=$("messages").scrollHeight;
 }
-
-function esc(s) {
-  if (s == null) return '';
-  const d = document.createElement('div');
-  d.textContent = String(s);
-  return d.innerHTML;
+function addMessage(role,text,latencyMs=null){
+  // 追加单条消息，并保持滚动条停留在最新消息。
+  const el=document.createElement("div");
+  el.className=`msg ${role}`;
+  const content=document.createElement("div");
+  content.className="msg-content";
+  content.textContent=text;
+  el.appendChild(content);
+  setMessageLatency(el,latencyMs);
+  $("messages").appendChild(el);
+  $("messages").scrollTop=$("messages").scrollHeight;
+  return el;
 }
-
-function getAvatarClass(npc) {
-  const t = String(npc.npc_type || '').toLowerCase();
-  if (t === 'staff') return 'staff';
-  if (t === 'customer' || t === 'fixed_customer') return 'customer';
-  return 'passerby';
+function roleToMessageClass(role){
+  // 将后端角色枚举映射为前端气泡样式。
+  const normalized=String(role || "").toLowerCase();
+  if(normalized==="player")return "player";
+  if(normalized==="npc" || normalized==="assistant")return "npc";
+  return "system";
 }
-
-function getAvatarLetter(npc) {
-  return (npc.name || npc.npc_id || '?').charAt(0);
-}
-
-// ─── Connection ───────────────────────────────────────────
-async function checkHealth() {
-  try {
-    const data = await request('GET', '/health');
-    $('connStatus').textContent = '已连接';
-    $('connStatus').className = 'status ok';
-    addSystemMessage(`服务正常 - ${data.service} | 工具数: ${data.available_tools?.length ?? '?'}`);
-  } catch (e) {
-    $('connStatus').textContent = '连接失败';
-    $('connStatus').className = 'status';
-    addSystemMessage('连接失败: ' + e.message);
-  }
-}
-
-// ─── Load NPC list ────────────────────────────────────────
-async function loadNpcList() {
-  try {
-    const data = await request('GET', '/npcs');
-    const npcs = dig(data, 'npcs', 'result.npcs') || [];
-    if (Array.isArray(npcs) && npcs.length) {
-      state.npcs = npcs;
-      renderNpcList();
-      return;
-    }
-  } catch (e) {}
-  try {
-    const data = await request('POST', '/tools/invoke', {
-      tool_name: 'get_npc_state',
-      arguments: { npc_id: '__list_all__' },
-    });
-    const npcs = dig(data, 'npcs', 'result.npcs') || [];
-    if (Array.isArray(npcs)) { state.npcs = npcs; renderNpcList(); }
-  } catch (e) {}
-}
-
-// ─── Scene ────────────────────────────────────────────────
-async function enterMorningCafe() {
-  const playerId = $('playerId').value.trim();
-  const nickname = $('nickname').value.trim() || undefined;
-  const sessionId = $('sessionId').value.trim() || undefined;
-  if (!playerId) return alert('请输入玩家ID');
-
-  try {
-    const data = await request('POST', '/scene/morning', {
-      player_id: playerId, nickname, session_id: sessionId,
-    });
-    const session = dig(data, 'result.session', 'session');
-    state.currentSessionId = session?.session_id || data.session_id || sessionId;
-    state.currentPlayerId = playerId;
-    const npcs = dig(data, 'result.npcs', 'npcs') || [];
-    if (Array.isArray(npcs) && npcs.length) state.npcs = npcs;
-    renderNpcList();
-    addSystemMessage(`已进入上午咖啡厅 - 会话: ${state.currentSessionId}`);
-    if (state.currentSessionId) $('sessionId').value = state.currentSessionId;
-    await refreshSnapshot();
-    await loadPlayerContext();
-  } catch (e) {
-    addSystemMessage('进入场景失败: ' + e.message);
-  }
-}
-
-function renderNpcList() {
-  const container = $('npcList');
-  if (!state.npcs.length) {
-    container.innerHTML = '<div style="color:var(--text3);font-size:12px;padding:12px 16px">暂无NPC，点击下方按钮刷新</div>';
+function renderMessages(messages){
+  // 用历史消息重建聊天窗口，空历史时给出温和提示。
+  clearMessages();
+  if(!messages.length){
+    showSystem("暂无历史消息，可以开始新的对话。");
     return;
   }
-  container.innerHTML = state.npcs.map(n => `
-    <div class="npc-card ${state.currentNpcId === n.npc_id ? 'active' : ''}"
-         onclick="selectNpc('${esc(n.npc_id)}')">
-      <div class="npc-avatar ${getAvatarClass(n)}">${esc(getAvatarLetter(n))}</div>
-      <div class="npc-info-wrap">
-        <div class="name">${esc(n.name || n.npc_id)}</div>
-        <div class="role">${esc(n.role || '')}</div>
-        <div class="emotion">${esc(n.current_emotion || '')} ${esc(n.current_location || '')}</div>
+  messages.forEach(message=>{
+    addMessage(
+      roleToMessageClass(message.role),
+      message.content || "",
+      message.reply_latency_ms
+    );
+  });
+}
+function syncSessionStateFromInputs(){
+  // 从输入框同步会话状态，避免页面刷新后内存状态为空。
+  state.playerId=$("playerId").value.trim();
+  state.sessionId=state.sessionId || $("sessionId").value.trim();
+  return Boolean(state.playerId && state.sessionId);
+}
+async function jsonRequest(path, options={}){
+  const res=await fetch(api()+path, options);
+  const data=await res.json();
+  if(!res.ok || !data.ok) throw new Error(data.error || data.detail || JSON.stringify(data));
+  return data.data;
+}
+async function checkHealth(){
+  try{
+    const data=await jsonRequest("/health");
+    $("status").textContent="已连接";
+    setRaw(data);
+  }catch(err){
+    $("status").textContent="连接失败";
+    showSystem(err.message);
+  }
+}
+async function uploadPdf(type){
+  const input=type==="game" ? $("gameSettingFile") : $("npcSettingFile");
+  if(!input.files.length){alert("请选择 PDF 文件");return}
+  const form=new FormData();
+  form.append("file",input.files[0]);
+  const path=type==="game" ? "/documents/game-settings/upload" : "/documents/npc-settings/upload";
+  $("uploadResult").textContent="上传处理中...";
+  try{
+    const data=await jsonRequest(path,{method:"POST",body:form});
+    $("uploadResult").textContent=JSON.stringify(data,null,2);
+    setRaw(data);
+    if(type==="npc") await loadNpcs();
+  }catch(err){
+    $("uploadResult").textContent=err.message;
+  }
+}
+async function enterScene(){
+  const player_id=$("playerId").value.trim();
+  const nickname=$("nickname").value.trim();
+  const session_id=$("sessionId").value.trim() || undefined;
+  const data=await jsonRequest("/sessions",{
+    method:"POST",
+    headers:{"Content-Type":"application/json"},
+    body:JSON.stringify({player_id,nickname,session_id})
+  });
+  state.playerId=player_id;
+  state.sessionId=data.result?.session?.session_id || session_id;
+  $("sessionId").value=state.sessionId || "";
+  showSystem(`会话已创建：${state.sessionId}`);
+  setRaw(data);
+  await loadNpcs();
+}
+async function loadNpcs(){
+  const data=await jsonRequest("/npcs");
+  state.npcs=data.npcs || data.result?.npcs || [];
+  $("npcList").innerHTML=state.npcs.map(n=>`
+    <div class="npc-item ${state.npcId===n.npc_id?"active":""}" onclick="selectNpc('${n.npc_id}')">
+      <div class="npc-row">
+        <div>
+          <div class="npc-name">${n.name || n.npc_id}</div>
+          <div class="npc-role">${n.role || ""}</div>
+        </div>
+        <button class="danger" onclick="deleteNpc(event,'${n.npc_id}')">删除</button>
       </div>
     </div>
-  `).join('');
+  `).join("") || "<div class='result'>暂无 NPC。</div>";
 }
-
-async function selectNpc(npcId) {
-  if (!state.currentSessionId) return alert('请先进入场景');
-  try {
-    await request('POST', `/sessions/${state.currentSessionId}/select-npc`, { npc_id: npcId });
-    state.currentNpcId = npcId;
-    const npc = state.npcs.find(n => n.npc_id === npcId);
-    renderNpcList();
-    $('chatNpcName').textContent = npc?.name || npcId;
-    $('chatNpcInfo').textContent = `${npc?.role || ''} · ${npc?.current_emotion || ''}`;
-    $('btnLoadHistory').style.display = '';
-    $('messages').innerHTML = '';
-    await loadHistoryMessages();
-    addSystemMessage(`已选择 NPC: ${npc?.name || npcId}`);
-    await loadNpcState(npcId);
-    await loadRelationship(state.currentPlayerId, npcId);
-    switchTab('npc');
-  } catch (e) {
-    addSystemMessage('选择NPC失败: ' + e.message);
-  }
-}
-
-// ─── Chat ─────────────────────────────────────────────────
-
-async function loadHistoryMessages() {
-  if (!state.currentPlayerId || !state.currentNpcId) return;
-  const container = $('messages');
-  try {
-    const path = `/dialogue/history?player_id=${encodeURIComponent(state.currentPlayerId)}&npc_id=${encodeURIComponent(state.currentNpcId)}&limit=100`;
-    const data = await request('GET', path);
-    const messages = data.messages || [];
-    if (!Array.isArray(messages) || messages.length === 0) return;
-    container.innerHTML = '';
-    const divider = document.createElement('div');
-    divider.className = 'history-divider';
-    divider.textContent = '历史对话记录';
-    container.appendChild(divider);
-    for (const msg of messages) {
-      const role = String(msg.role || '').toLowerCase();
-      const content = msg.content || '';
-      if (!content) continue;
-      if (role === 'player') {
-        addChatMessage('player', content, {}, true);
-      } else if (role === 'npc') {
-        const meta = {
-          action: msg.action ? String(msg.action) : '',
-          emotion: msg.emotion ? String(msg.emotion) : '',
-          intent: msg.intent ? String(msg.intent) : '',
-        };
-        addChatMessage('npc', content, meta, true);
-      }
+async function deleteNpc(event,npcId){
+  event.stopPropagation();
+  if(!confirm(`确认删除 NPC：${npcId}？`))return;
+  try{
+    const data=await jsonRequest(`/npcs/${npcId}`,{method:"DELETE"});
+    if(state.npcId===npcId){
+      state.npcId="";
+      $("chatTitle").textContent="请选择 NPC";
+      $("chatSub").textContent="游戏 NPC 对话调试";
+      $("npcDetail").textContent="尚未选择 NPC。";
     }
-    const endDivider = document.createElement('div');
-    endDivider.className = 'history-divider';
-    endDivider.textContent = '以上为历史记录';
-    container.appendChild(endDivider);
-    container.scrollTop = container.scrollHeight;
-  } catch (e) {
-    console.warn('加载历史记录失败:', e.message);
+    setRaw(data);
+    await loadNpcs();
+  }catch(err){
+    showSystem(err.message);
   }
 }
-
-function addSystemMessage(text) {
-  const container = $('messages');
-  if (container.querySelector('.empty-state')) container.innerHTML = '';
-  const div = document.createElement('div');
-  div.className = 'msg system';
-  div.textContent = text;
-  container.appendChild(div);
-  container.scrollTop = container.scrollHeight;
-}
-
-function addChatMessage(role, text, meta = {}, isHistory = false) {
-  const container = $('messages');
-  if (container.querySelector('.empty-state')) container.innerHTML = '';
-  const div = document.createElement('div');
-  div.className = `msg ${role}${isHistory ? ' history' : ''}`;
-  if (role === 'npc') {
-    const metaHtml = [
-      meta.action ? `<span>${esc(meta.action)}</span>` : '',
-      meta.emotion ? `<span>${esc(meta.emotion)}</span>` : '',
-      meta.intent ? `<span>${esc(meta.intent)}</span>` : '',
-      meta.elapsed ? `<span style="color:var(--wechat-green)">${esc(meta.elapsed)}s</span>` : '',
-    ].filter(Boolean).join('');
-    div.innerHTML = `${esc(text)}${metaHtml ? `<div class="meta">${metaHtml}</div>` : ''}`;
-  } else {
-    div.textContent = text;
-  }
-  container.appendChild(div);
-  if (!isHistory) container.scrollTop = container.scrollHeight;
-}
-
-function showTyping() {
-  const container = $('messages');
-  if (container.querySelector('.empty-state')) container.innerHTML = '';
-  const div = document.createElement('div');
-  div.className = 'typing';
-  div.id = 'typingIndicator';
-  div.textContent = '对方正在输入';
-  container.appendChild(div);
-  container.scrollTop = container.scrollHeight;
-}
-
-function hideTyping() {
-  const el = $('typingIndicator');
-  if (el) el.remove();
-}
-
-async function sendMessage() {
-  const input = $('chatInput');
-  const text = input.value.trim();
-  if (!text || state.sending) return;
-  if (!state.currentSessionId || !state.currentNpcId) return alert('请先进入场景并选择NPC');
-  state.sending = true;
-  input.value = '';
-  addChatMessage('player', text);
-  showTyping();
-  const t0 = Date.now();
-  try {
-    const data = await request('POST', '/dialogue/messages', {
-      player_id: state.currentPlayerId,
-      session_id: state.currentSessionId,
-      message: text,
-      npc_id: state.currentNpcId,
+async function selectNpc(npcId){
+  // 选择 NPC 后立即加载该玩家与 NPC 的历史对话。
+  if(!syncSessionStateFromInputs()){alert("请先进入会话");return}
+  try{
+    await jsonRequest(`/sessions/${state.sessionId}/select-npc`,{
+      method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({npc_id:npcId})
     });
-    hideTyping();
-    const elapsed = ((Date.now() - t0) / 1000).toFixed(1);
-
-    // npc_reply is the full write_npc_reply tool result, actual text is nested
-    const reply = dig(data, 'npc_reply.message.content', 'npc_reply.content',
-                       'decision.line', 'reply', 'content', 'message') || '';
-    // Normalize: if reply is still an object, try its .content or stringify
-    const replyText = typeof reply === 'object' ? (reply.content || reply.line || JSON.stringify(reply)) : String(reply);
-
-    const action = dig(data, 'decision.action', 'action') || '';
-    const emotion = dig(data, 'decision.emotion', 'emotion') || '';
-    const intent = dig(data, 'decision.intent', 'intent') || '';
-    const meta = {
-      action: typeof action === 'object' ? JSON.stringify(action) : String(action),
-      emotion: typeof emotion === 'object' ? JSON.stringify(emotion) : String(emotion),
-      intent: typeof intent === 'object' ? JSON.stringify(intent) : String(intent),
-      elapsed,
-    };
-    addChatMessage('npc', replyText, meta);
-    loadNpcState(state.currentNpcId);
-    loadRelationship(state.currentPlayerId, state.currentNpcId);
-    loadPlayerContext();
-  } catch (e) {
-    hideTyping();
-    addSystemMessage('发送失败: ' + e.message);
-  } finally {
-    state.sending = false;
+    state.npcId=npcId;
+    const npc=state.npcs.find(n=>n.npc_id===npcId) || {};
+    $("chatTitle").textContent=npc.name || npcId;
+    $("chatSub").textContent=npc.role || "";
+    $("npcDetail").textContent=JSON.stringify(npc,null,2);
+    await loadDialogueHistory(npcId);
+    await loadNpcs();
+  }catch(err){
+    showSystem(err.message);
   }
 }
-
-// ─── Snapshot / World ─────────────────────────────────────
-async function refreshSnapshot() {
-  if (!state.currentSessionId) return;
-  try {
-    const data = await request('GET', `/sessions/${state.currentSessionId}/snapshot`);
-    const ws = dig(data, 'world_state.world_state', 'world_state') || {};
-    const evtData = dig(data, 'events') || {};
-    const events = evtData.events || (Array.isArray(evtData) ? evtData : []);
-    renderWorldState(ws, events);
-    if (data.selected_npc_id && !state.currentNpcId) {
-      state.currentNpcId = data.selected_npc_id;
-      const npc = state.npcs.find(n => n.npc_id === data.selected_npc_id);
-      if (npc) {
-        $('chatNpcName').textContent = npc.name;
-        $('chatNpcInfo').textContent = `${npc.role} · ${npc.current_emotion}`;
-      }
-      renderNpcList();
-    }
-    const selNpc = dig(data, 'selected_npc.npc', 'selected_npc');
-    if (selNpc && state.currentNpcId) {
-      const idx = state.npcs.findIndex(n => n.npc_id === state.currentNpcId);
-      if (idx >= 0) { state.npcs[idx] = { ...state.npcs[idx], ...selNpc }; renderNpcList(); }
-    }
-  } catch (e) {
-    $('worldContent').innerHTML = `<span style="color:#fa5151">加载失败: ${esc(e.message)}</span>`;
+async function loadDialogueHistory(npcId){
+  // 使用历史接口按玩家和 NPC 拉取对话，并渲染到聊天窗口。
+  const params=new URLSearchParams({
+    player_id:state.playerId,
+    npc_id:npcId,
+    limit:"80"
+  });
+  const data=await jsonRequest(`/dialogue/history?${params.toString()}`);
+  const messages=data.messages || [];
+  renderMessages(messages);
+  setRaw(data);
+}
+async function sendMessage(){
+  const text=$("messageInput").value.trim();
+  if(!text)return;
+  if(!syncSessionStateFromInputs() || !state.npcId){alert("请先进入会话并选择 NPC");return}
+  $("messageInput").value="";
+  addMessage("player",text);
+  const npcEl=addMessage("npc","");
+  try{
+    const res=await fetch(api()+"/dialogue/messages/stream",{
+      method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({
+        player_id:state.playerId,
+        session_id:state.sessionId,
+        npc_id:state.npcId,
+        message:text
+      })
+    });
+    if(!res.ok || !res.body)throw new Error(`流式请求失败：${res.status}`);
+    await readDialogueStream(res,npcEl);
+  }catch(err){showSystem(err.message)}
+}
+async function readDialogueStream(res,npcEl){
+  // 读取后端 SSE 流，把 chunk 追加到当前 NPC 气泡，done 时展示耗时。
+  const reader=res.body.getReader();
+  const decoder=new TextDecoder();
+  let buffer="";
+  while(true){
+    const {value,done}=await reader.read();
+    if(done)break;
+    buffer+=decoder.decode(value,{stream:true});
+    const parts=buffer.split("\n\n");
+    buffer=parts.pop() || "";
+    parts.forEach(part=>handleDialogueEvent(part,npcEl));
+  }
+  if(buffer.trim())handleDialogueEvent(buffer,npcEl);
+}
+function handleDialogueEvent(block,npcEl){
+  // 解析单个 SSE 事件块，兼容多行 data 字段。
+  const lines=block.split("\n");
+  const eventLine=lines.find(line=>line.startsWith("event:"));
+  const dataLines=lines.filter(line=>line.startsWith("data:"));
+  const eventName=eventLine ? eventLine.slice(6).trim() : "message";
+  const payloadText=dataLines.map(line=>line.slice(5).trim()).join("\n");
+  if(!payloadText)return;
+  const payload=JSON.parse(payloadText);
+  if(eventName==="chunk"){
+    appendMessageText(npcEl,payload.content || "");
+    return;
+  }
+  if(eventName==="done"){
+    setMessageLatency(npcEl,payload.reply_latency_ms);
+    setRaw(payload);
+    return;
+  }
+  if(eventName==="error"){
+    throw new Error(payload.error || "流式响应失败");
   }
 }
-
-function renderWorldState(ws, events) {
-  const html = `
-    <div class="data-block"><div class="key">时间段</div><div class="val">${esc(ws.time_period || '-')}</div></div>
-    <div class="data-block"><div class="key">天气</div><div class="val">${esc(ws.weather || '-')}</div></div>
-    <div class="data-block"><div class="key">客流量</div><div class="val">${esc(ws.customer_flow || '-')}</div></div>
-    <div class="data-block"><div class="key">背景音乐</div><div class="val">${esc(ws.background_music || '-')}</div></div>
-    <div class="data-block"><div class="key">库存</div><div class="val"><pre>${JSON.stringify(ws.inventory || {}, null, 2)}</pre></div></div>
-    <div class="data-block"><div class="key">今日菜单</div><div class="val"><pre>${JSON.stringify(ws.today_menu || [], null, 2)}</pre></div></div>
-    <div class="data-block"><div class="key">座位占用</div><div class="val"><pre>${JSON.stringify(ws.seat_occupancy || {}, null, 2)}</pre></div></div>
-    <div class="data-block"><div class="key">事件 (${events.length})</div><div class="val">${events.map(e => esc(e.title || e.event_id || JSON.stringify(e))).join('<br/>') || '无'}</div></div>
-  `;
-  $('worldContent').innerHTML = html;
+async function searchRag(){
+  const query=$("ragQuery").value.trim();
+  if(!query)return;
+  const data=await jsonRequest("/rag/game-settings/search",{
+    method:"POST",
+    headers:{"Content-Type":"application/json"},
+    body:JSON.stringify({query,limit:5})
+  });
+  $("ragResult").innerHTML=`
+    <div class="data"><b>上下文</b><pre>${data.context || ""}</pre></div>
+    <div class="data"><b>片段</b><pre>${JSON.stringify(data.chunks,null,2)}</pre></div>`;
+  setRaw(data);
 }
-
-// ─── NPC State ────────────────────────────────────────────
-async function loadNpcState(npcId) {
-  try {
-    const data = await request('GET', `/npcs/${npcId}`);
-    const npc = dig(data, 'npc') || data;
-    renderNpcState(npc);
-  } catch (e) {
-    $('npcContent').innerHTML = `<span style="color:#fa5151">${esc(e.message)}</span>`;
-  }
+function switchTab(event,name){
+  document.querySelectorAll(".tab").forEach(btn=>btn.classList.remove("active"));
+  document.querySelectorAll(".tab-content").forEach(tab=>tab.classList.remove("active"));
+  event.target.classList.add("active");
+  $(`tab-${name}`).classList.add("active");
 }
-
-function renderNpcState(n) {
-  const html = `
-    <div class="data-block"><div class="key">ID</div><div class="val">${esc(n.npc_id || '')}</div></div>
-    <div class="data-block"><div class="key">名称</div><div class="val">${esc(n.name || '')}</div></div>
-    <div class="data-block"><div class="key">类型 / 角色</div><div class="val">${esc(n.npc_type || '')} / ${esc(n.role || '')}</div></div>
-    <div class="data-block"><div class="key">性格</div><div class="val">${esc(n.personality || '-')}</div></div>
-    <div class="data-block"><div class="key">说话风格</div><div class="val">${esc(n.speaking_style || '-')}</div></div>
-    <div class="data-block"><div class="key">当前情绪</div><div class="val">${esc(n.current_emotion || '-')}</div></div>
-    <div class="data-block"><div class="key">当前位置</div><div class="val">${esc(n.current_location || '-')}</div></div>
-    <div class="data-block"><div class="key">MBTI</div><div class="val">${esc(n.mbti || '-')}</div></div>
-    <div class="data-block"><div class="key">咖啡偏好</div><div class="val"><pre>${JSON.stringify(n.coffee_preferences || {}, null, 2)}</pre></div></div>
-    <div class="data-block"><div class="key">爱好</div><div class="val">${(n.hobbies || []).map(h => esc(h)).join(', ') || '-'}</div></div>
-    <div class="data-block"><div class="key">背景</div><div class="val">${esc(n.background || '-')}</div></div>
-  `;
-  $('npcContent').innerHTML = html;
-}
-
-// ─── Relationship ─────────────────────────────────────────
-async function loadRelationship(playerId, npcId) {
-  if (!playerId || !npcId) return;
-  try {
-    const data = await request('GET', `/players/${playerId}/relationships/${npcId}`);
-    const rel = dig(data, 'relationship') || data;
-    renderRelationship(rel);
-  } catch (e) {}
-}
-
-function renderRelationship(r) {
-  const dims = [
-    { key: 'trust', label: '信任', color: '#07c160' },
-    { key: 'familiarity', label: '熟悉', color: '#576b95' },
-    { key: 'fondness', label: '喜欢', color: '#fa5151' },
-    { key: 'dislike', label: '厌恶', color: '#8e44ad' },
-    { key: 'stress', label: '压力', color: '#fa9d3b' },
-  ];
-  const html = `<div style="margin-bottom:10px;font-weight:600;color:var(--text);font-size:13px">关系五维</div>` +
-    dims.map(d => {
-      const v = r[d.key] ?? 0;
-      const pct = Math.min(Math.max(v, 0), 100);
-      return `<div class="rel-bar">
-        <div class="label">${d.label}</div>
-        <div class="bar"><div class="fill" style="width:${pct}%;background:${d.color}"></div></div>
-        <div class="num">${v}</div>
-      </div>`;
-    }).join('') +
-    `<div class="data-block" style="margin-top:8px"><div class="key">最后互动</div><div class="val">${r.last_interacted_at ? formatTime(r.last_interacted_at) : '-'}</div></div>`;
-  $('npcContent').innerHTML += html;
-}
-
-// ─── Player ───────────────────────────────────────────────
-async function loadPlayerContext() {
-  if (!state.currentPlayerId) return;
-  try {
-    const data = await request('GET', `/players/${state.currentPlayerId}/context${state.currentNpcId ? '?npc_id=' + encodeURIComponent(state.currentNpcId) : ''}`);
-    const player = dig(data, 'profile.player', 'profile', 'result.player', 'player') || data;
-    renderPlayerContext(player);
-  } catch (e) {
-    $('playerContent').innerHTML = `<span style="color:#fa5151">${esc(e.message)}</span>`;
-  }
-}
-
-function renderPlayerContext(p) {
-  const html = `
-    <div class="data-block"><div class="key">玩家 ID</div><div class="val">${esc(p.player_id || '')}</div></div>
-    <div class="data-block"><div class="key">昵称</div><div class="val">${esc(p.nickname || '-')}</div></div>
-    <div class="data-block"><div class="key">口味偏好</div><div class="val"><pre>${JSON.stringify(p.taste_preferences || {}, null, 2)}</pre></div></div>
-    <div class="data-block"><div class="key">消费习惯</div><div class="val"><pre>${JSON.stringify(p.consumption_habits || {}, null, 2)}</pre></div></div>
-    <div class="data-block"><div class="key">性格倾向</div><div class="val"><pre>${JSON.stringify(p.personality_tendency || {}, null, 2)}</pre></div></div>
-    <div class="data-block"><div class="key">常互动 NPC</div><div class="val">${(p.frequent_npc_ids || []).join(', ') || '-'}</div></div>
-    <div class="data-block"><div class="key">NPC 主观笔记</div><div class="val"><pre>${JSON.stringify(p.npc_subjective_notes || {}, null, 2)}</pre></div></div>
-  `;
-  $('playerContent').innerHTML = html;
-}
-
-// ─── Tools ────────────────────────────────────────────────
-async function loadTools() {
-  try {
-    const data = await request('GET', '/tools');
-    const tools = data.tools || [];
-    $('toolsContent').innerHTML = tools.map(t =>
-      typeof t === 'string'
-        ? `<div class="tool-item" onclick="invokeTool('${esc(t)}')"><div class="tname">${esc(t)}</div></div>`
-        : `<div class="tool-item" onclick="invokeTool('${esc(t.name || '')}')"><div class="tname">${esc(t.name || '')}</div><div class="tdesc">${esc(t.description || '')}</div></div>`
-    ).join('') || '<span style="color:var(--text3)">无可用工具</span>';
-  } catch (e) {
-    $('toolsContent').innerHTML = `<span style="color:#fa5151">${esc(e.message)}</span>`;
-  }
-}
-
-async function invokeTool(name) {
-  const argsStr = prompt(`调用工具: ${name}\n请输入 JSON 参数 (可为空):`, '{}');
-  if (argsStr === null) return;
-  let args = {};
-  try { args = JSON.parse(argsStr || '{}'); } catch { return alert('JSON 格式错误'); }
-  try {
-    const data = await request('POST', '/tools/invoke', { tool_name: name, arguments: args });
-    addSystemMessage(`工具 ${name} 返回: ${JSON.stringify(data).slice(0, 300)}`);
-  } catch (e) {
-    addSystemMessage(`工具 ${name} 失败: ${e.message}`);
-  }
-}
-
-// ─── Coffee Knowledge ─────────────────────────────────────
-async function searchCoffee() {
-  const query = $('coffeeQuery').value.trim();
-  const category = $('coffeeCategory').value;
-  try {
-    let path = `/coffee-knowledge?limit=20`;
-    if (category) path += `&category=${encodeURIComponent(category)}`;
-    const data = await request('GET', path);
-    const items = dig(data, 'knowledge') || data.items || data.records || (Array.isArray(data) ? data : []);
-    $('coffeeContent').innerHTML = items.length
-      ? items.map(k => `<div class="know-item"><div class="ktitle">${esc(k.title || k.name || k.knowledge_id || '')}</div><div class="kcat">${esc(k.category || '')}</div><div style="margin-top:4px">${esc(k.content || k.description || '')}</div></div>`).join('')
-      : '<span style="color:var(--text3)">无结果</span>';
-  } catch (e) {
-    $('coffeeContent').innerHTML = `<span style="color:#fa5151">${esc(e.message)}</span>`;
-  }
-}
-
-// ─── Tabs ─────────────────────────────────────────────────
-function switchTab(name) {
-  document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.textContent.includes({world:'世界',npc:'NPC',player:'玩家',tools:'工具',coffee:'咖啡'}[name])));
-  document.querySelectorAll('.tab-content').forEach(tc => tc.classList.toggle('active', tc.id === `tab-${name}`));
-}
-
-// ─── Init ─────────────────────────────────────────────────
 checkHealth();
-loadNpcList();
+loadNpcs().catch(()=>{});
 </script>
 </body>
 </html>

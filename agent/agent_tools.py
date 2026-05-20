@@ -1,7 +1,7 @@
 """
-CoffeeNpcAgent tools.
+NpcAgent tools.
 
-This module provides a tool class for a cafe NPC Agent. It follows the same
+This module provides a tool class for a NPC Agent. It follows the same
 configuration style as a simple AgentTools class, but all database operations go
 through service/db_service layers rather than raw SQL.
 """
@@ -12,22 +12,22 @@ import json
 import os
 import uuid
 from datetime import date, datetime
-from uuid import UUID, uuid4
+from uuid import uuid4
 from enum import Enum
 from typing import Any, Callable, Optional
 
 import requests
 from pydantic import BaseModel
 
-from db.db_config import CoffeeKnowledgeCategory, Emotion, MemoryType, NpcAction, TimePeriod
+from db.db_config import Emotion, MemoryType, NpcAction, TimePeriod
 from db.db_service import DbService, model_to_dict
 from model.dialogue_model import NpcReplyCreate, PlayerMessageCreate
 from model.memory_model import LongTermMemoryCreate
 from model.relationship_model import RelationshipDelta
 from model.world_model import CafeWorldStateUpdate
-from service.cafe_scene_service import CafeSceneService
-from service.coffee_knowledge_service import CoffeeKnowledgeService
+from service.scene_service import SceneService
 from service.dialogue_service import DialogueService
+from service.game_document_service import GameDocumentService
 from service.long_memory_service import LongMemoryService
 from service.npc_service import NpcService
 from service.player_service import PlayerService
@@ -67,12 +67,12 @@ def _fail(tool_name: str, error: str, **payload: Any) -> dict[str, Any]:
     return {"ok": False, "tool_name": tool_name, "error": error, **_jsonable(payload)}
 
 
-class CoffeeNpcAgentTools:
+class NpcAgentTools:
     """
     Cafe NPC Agent tool set.
 
     Typical usage:
-        tools = CoffeeNpcAgentTools()
+        tools = NpcAgentTools()
         result = tools.invoke_tool("get_npc_state", {"npc_id": "barista_001"})
 
     Design rules:
@@ -96,15 +96,15 @@ class CoffeeNpcAgentTools:
         self.short_memories = ShortMemoryService(self.db)
         self.long_memories = LongMemoryService(self.db)
         self.world = WorldStateService(self.db)
-        self.coffee = CoffeeKnowledgeService(self.db)
-        self.scene = CafeSceneService(self.db)
+        self.game_documents = GameDocumentService(self.db)
+        self.scene = SceneService(self.db)
         self.llm_service = llm_service
 
         self.enable_web_search = enable_web_search
         self.search_api_key = search_api_key or os.getenv("TAVILY_API_KEY") or os.getenv("SEARCH_API_KEY")
         self.toolConfig = self._build_tool_config()
         self._tool_handlers: dict[str, Callable[..., Any]] = {
-            "enter_morning_cafe": self.enter_morning_cafe,
+            "enter_morning_cafe": self.enter_game_world,
             "select_dialogue_npc": self.select_dialogue_npc,
             "get_npc_state": self.get_npc_state,
             "update_npc_emotion": self.update_npc_emotion,
@@ -118,13 +118,12 @@ class CoffeeNpcAgentTools:
             "write_npc_reply": self.write_npc_reply,
             "get_short_term_memory": self.get_short_term_memory,
             "get_long_term_memories": self.get_long_term_memories,
+            "get_game_setting_context": self.get_game_setting_context,
             "create_long_term_memory": self.create_long_term_memory,
             "create_long_term_memory_from_messages": self.create_long_term_memory_from_messages,
             "get_world_state": self.get_world_state,
             "update_world_state": self.update_world_state,
             "get_cafe_events": self.get_cafe_events,
-            "get_coffee_knowledge": self.get_coffee_knowledge,
-            "get_recommendation_context": self.get_recommendation_context,
             "check_action_allowed": self.check_action_allowed,
             "web_search": self.web_search,
             "append_short_term_message": self.append_short_term_message,
@@ -134,7 +133,7 @@ class CoffeeNpcAgentTools:
     def close(self) -> None:
         self.db.close()
 
-    def __enter__(self) -> "CoffeeNpcAgentTools":
+    def __enter__(self) -> "NpcAgentTools":
         return self
 
     def __exit__(self, exc_type, exc, tb) -> None:
@@ -145,9 +144,9 @@ class CoffeeNpcAgentTools:
     def _build_tool_config(self) -> list[dict[str, Any]]:
         return [
             {
-                "name_for_human": "进入上午咖啡厅场景",
-                "name_for_model": "enter_morning_cafe",
-                "description_for_model": "为玩家创建或复用画像，并创建上午咖啡厅会话，返回世界状态、遇见规则和本轮可交互 NPC。",
+                "name_for_human": "进入游戏场景",
+                "name_for_model": "enter_game",
+                "description_for_model": "为玩家创建或复用画像，并创建会话，返回世界状态、遇见规则和本轮可交互 NPC。",
                 "parameters": {
                     "type": "object",
                     "properties": {
@@ -313,6 +312,7 @@ class CoffeeNpcAgentTools:
                         "relationship_delta": {"type": "object"},
                         "state_delta": {"type": "object"},
                         "metadata_json": {"type": "object"},
+                        "reply_started_at": {"type": "number"},
                     },
                     "required": ["session_id", "player_id", "npc_id", "content"],
                 },
@@ -364,9 +364,9 @@ class CoffeeNpcAgentTools:
                 },
             },
             {
-                "name_for_human": "查询咖啡厅世界状态",
+                "name_for_human": "查询游戏世界状态",
                 "name_for_model": "get_world_state",
-                "description_for_model": "查询当前时间段、客流量、库存、今日菜单、天气、背景音乐、座位占用和当前事件。推荐咖啡前必须调用。",
+                "description_for_model": "查询当前事件等世界状态。",
                 "parameters": {
                     "type": "object",
                     "properties": {"session_id": {"type": "string", "default": "default_morning_session"}},
@@ -374,9 +374,9 @@ class CoffeeNpcAgentTools:
                 },
             },
             {
-                "name_for_human": "更新咖啡厅世界状态",
+                "name_for_human": "更新游戏世界状态",
                 "name_for_model": "update_world_state",
-                "description_for_model": "更新库存、今日菜单、座位占用、天气等世界状态。",
+                "description_for_model": "更新天气等世界状态。",
                 "parameters": {
                     "type": "object",
                     "properties": {
@@ -384,44 +384,6 @@ class CoffeeNpcAgentTools:
                         "state_patch": {"type": "object"},
                     },
                     "required": ["session_id", "state_patch"],
-                },
-            },
-            {
-                "name_for_human": "查询咖啡厅事件",
-                "name_for_model": "get_cafe_events",
-                "description_for_model": "查询当前咖啡厅激活事件。NPC 回答店内情况、传闻、今日事件时优先调用。",
-                "parameters": {
-                    "type": "object",
-                    "properties": {"time_period": {"type": "string", "enum": [item.value for item in TimePeriod]}},
-                    "required": [],
-                },
-            },
-            {
-                "name_for_human": "查询咖啡知识库",
-                "name_for_model": "get_coffee_knowledge",
-                "description_for_model": "查询咖啡豆、冲煮、奶咖、风味和菜单知识。NPC 回答咖啡问题时优先调用。",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "category": {"type": "string", "enum": [item.value for item in CoffeeKnowledgeCategory]},
-                        "tag": {"type": "string"},
-                        "limit": {"type": "integer", "default": 20},
-                    },
-                    "required": [],
-                },
-            },
-            {
-                "name_for_human": "获取推荐咖啡上下文",
-                "name_for_model": "get_recommendation_context",
-                "description_for_model": "组合玩家画像、NPC 状态、关系、世界状态、可售菜单和咖啡知识，供 recommend_coffee 动作生成台词。",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "player_id": {"type": "string"},
-                        "npc_id": {"type": "string"},
-                        "session_id": {"type": "string", "default": "default_morning_session"},
-                    },
-                    "required": ["player_id", "npc_id"],
                 },
             },
             {
@@ -446,6 +408,19 @@ class CoffeeNpcAgentTools:
                     "type": "object",
                     "properties": {"search_query": {"type": "string"}},
                     "required": ["search_query"],
+                },
+            },
+            {
+                "name_for_human": "检索游戏设定",
+                "name_for_model": "get_game_setting_context",
+                "description_for_model": "按玩家输入检索游戏世界观、规则、地点和任务设定，作为 NPC 对话 RAG 上下文。",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "query": {"type": "string"},
+                        "limit": {"type": "integer", "default": 5},
+                    },
+                    "required": ["query"],
                 },
             },
         ]
@@ -498,11 +473,11 @@ class CoffeeNpcAgentTools:
 
     # ---------- Scene ----------
 
-    def enter_morning_cafe(self, player_id: str, nickname: str | None = None, session_id: str | None = None) -> dict[str, Any]:
+    def enter_game_world(self, player_id: str, nickname: str | None = None, session_id: str | None = None) -> dict[str, Any]:
         if not player_id:
-            return _fail("enter_morning_cafe", "缺少必要参数 player_id")
+            return _fail("enter_game_world", "缺少必要参数 player_id")
         result = self.scene.enter_morning_cafe(player_id=player_id, nickname=nickname, session_id=session_id)
-        return _ok("enter_morning_cafe", result=result)
+        return _ok("enter_game_world", result=result)
 
     def select_dialogue_npc(self, session_id: str, npc_id: str) -> dict[str, Any]:
         if not session_id or not npc_id:
@@ -643,6 +618,7 @@ class CoffeeNpcAgentTools:
         relationship_delta: dict[str, int] | None = None,
         state_delta: dict[str, Any] | None = None,
         metadata_json: dict[str, Any] | None = None,
+        reply_started_at: float | None = None,
     ) -> dict[str, Any]:
         if not all([session_id, player_id, npc_id, content]):
             return _fail("write_npc_reply", "缺少必要参数")
@@ -664,6 +640,7 @@ class CoffeeNpcAgentTools:
                 relationship_delta=rel_delta,
                 state_delta=state_delta or {},
                 metadata_json=metadata_json or {},
+                reply_started_at=reply_started_at,
             )
         )
         if state_delta and state_delta.get("npc_emotion"):
@@ -688,7 +665,6 @@ class CoffeeNpcAgentTools:
         npc_id: str,
         message: dict,
         async_archive: bool = False,
-        llm_service: Any | None = None,
     ):
         return self.short_memories.append_short_term_message(
             player_id=player_id,
@@ -739,6 +715,19 @@ class CoffeeNpcAgentTools:
             limit=safe_limit,
         )
         return _ok("get_long_term_memories", count=len(memories), memories=memories)
+
+    def get_game_setting_context(self, query: str, limit: int = 5) -> dict[str, Any]:
+        if not query:
+            return _fail("get_game_setting_context", "缺少必要参数 query")
+        result = self.game_documents.search_game_settings(query=query, limit=limit)
+        if result.get("ok") is False:
+            return _fail("get_game_setting_context", str(result.get("error")))
+        return _ok(
+            "get_game_setting_context",
+            query=result["query"],
+            chunks=result["chunks"],
+            context=result["context"],
+        )
 
     def create_long_term_memory(
         self,
@@ -811,15 +800,6 @@ class CoffeeNpcAgentTools:
         events = self.world.list_active_events(time_period=TimePeriod(time_period) if time_period else None)
         return _ok("get_cafe_events", count=len(events), events=events)
 
-    def get_coffee_knowledge(self, category: Optional[str] = None, tag: Optional[str] = None, limit: int = 20) -> dict[str, Any]:
-        if category and category not in {item.value for item in CoffeeKnowledgeCategory}:
-            return _fail("get_coffee_knowledge", f"非法 category: {category}")
-        if tag:
-            rows = self.coffee.search_by_tag(tag, limit=max(1, min(int(limit), 100)))
-        else:
-            rows = self.coffee.list_knowledge(category=CoffeeKnowledgeCategory(category) if category else None, limit=max(1, min(int(limit), 100)))
-        return _ok("get_coffee_knowledge", count=len(rows), knowledge=rows)
-
     def get_recommendation_context(self, player_id: str, npc_id: str, session_id: str = "default_morning_session") -> dict[str, Any]:
         if not player_id or not npc_id:
             return _fail("get_recommendation_context", "缺少必要参数 player_id 或 npc_id")
@@ -856,9 +836,6 @@ class CoffeeNpcAgentTools:
             legal_locations = {"counter", "window_seat", "entrance", "kitchen", "bar", "table_area", "door"}
             if not target_location or target_location not in legal_locations:
                 return {"ok": True, "tool_name": "check_action_allowed", "allowed": False, "fallback_action": "chat", "reason": "move_location 目标位置非法或缺失"}
-        if action == NpcAction.SERVE_CUSTOMER.value:
-            if npc.npc_type != "staff" and getattr(npc.npc_type, "value", npc.npc_type) != "staff":
-                return {"ok": True, "tool_name": "check_action_allowed", "allowed": False, "fallback_action": "chat", "reason": "非工作人员不能执行 serve_customer"}
         return {"ok": True, "tool_name": "check_action_allowed", "allowed": True, "fallback_action": None, "reason": "action 合法"}
 
     # ---------- Optional external search ----------

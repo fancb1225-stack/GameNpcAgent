@@ -1,13 +1,12 @@
 """
-Director Agent for CoffeeNpcAgent.
 
 职责：
-1. 负责咖啡厅场景入口和会话调度。
+1. 负责场景入口和会话调度。
 2. 管理多个 NpcGraphAgent 实例。
 3. 将玩家消息路由给当前选择的 NPC。
 4. 提供稳定的上层接口，供 FastAPI、CLI 或游戏服务调用。
 
-该文件不直接访问数据库，不写原始 SQL。所有状态读取与写入都通过 CoffeeNpcAgentTools 完成。
+该文件不直接访问数据库，不写原始 SQL。所有状态读取与写入都通过 NpcAgentTools 完成。
 """
 
 from __future__ import annotations
@@ -18,17 +17,22 @@ from uuid import uuid4
 
 import sys
 import os
+
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
+import logging
+
 from agent.llm_service import LlmService
+
+_log = logging.getLogger(__name__)
 
 
 DEFAULT_LLM_ARGUMENT = object()
 
 try:
-    from agent.coffee_npc_agent_tools import CoffeeNpcAgentTools
+    from agent.agent_tools import NpcAgentTools
 except Exception:  # 允许调用方注入 tools
-    CoffeeNpcAgentTools = Any  # type: ignore
+    NpcAgentTools = Any  # type: ignore
 
 try:
     from agent.npc_graph_agent import NpcGraphAgent
@@ -45,19 +49,26 @@ class DirectorSession:
 
 
 class DirectorAgent:
-    """咖啡厅 NPC Agent 的导演层。"""
+    """ NPC Agent 的导演层。"""
 
     def __init__(
         self,
-        tools: Optional[CoffeeNpcAgentTools] = None,
+        tools: Optional[NpcAgentTools] = None,
         llm: Any = DEFAULT_LLM_ARGUMENT,
         enable_web_search: bool = False,
     ) -> None:
-        self.tools = tools or CoffeeNpcAgentTools(enable_web_search=enable_web_search)
-        # 未显式传入 llm 时创建默认模型；显式传入 None 时走规则降级。
-        self.llm = LlmService.getLLM() if llm is DEFAULT_LLM_ARGUMENT else llm
-        if hasattr(self.tools, "llm_service"):
-            self.tools.llm_service = self.llm
+        self.tools = tools or NpcAgentTools(enable_web_search=enable_web_search)
+        if llm is DEFAULT_LLM_ARGUMENT:
+            try:
+                self.llm = LlmService.getLLM() or None
+            except Exception:
+                _log.exception("[DirectorAgent] LLMService.getLLM() 失败")
+                self.llm = None
+        else:
+            self.llm = llm
+
+        _log.info("[DirectorAgent] llm=%s", type(self.llm).__name__ if self.llm else "None")
+
         self.sessions: Dict[str, DirectorSession] = {}
         self.npc_agents: Dict[str, NpcGraphAgent] = {}
 
@@ -78,7 +89,7 @@ class DirectorAgent:
         session_id: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
-        创建或进入上午咖啡厅场景。
+        创建或进入场景。
 
         返回工具层给出的玩家画像、会话、世界状态、可遇见 NPC 等信息。
         """
@@ -87,6 +98,36 @@ class DirectorAgent:
         session_id = session_id or f"session_{uuid4().hex[:12]}"
         result = self.tools.invoke_tool(
             "enter_morning_cafe",
+            {
+                "player_id": player_id,
+                "nickname": nickname,
+                "session_id": session_id,
+            },
+        )
+        if result.get("ok"):
+            self.sessions[session_id] = DirectorSession(
+                player_id=player_id,
+                session_id=session_id,
+                selected_npc_id=None,
+            )
+        return result
+
+    def enter_game_world(
+        self,
+        player_id: str,
+        nickname: Optional[str] = None,
+        session_id: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """
+        创建或进入游戏世界场景。
+
+        返回工具层给出的玩家画像、会话、世界状态、可遇见 NPC 等信息。
+        """
+        if not player_id:
+            return self._fail("缺少 player_id")
+        session_id = session_id or f"session_{uuid4().hex[:12]}"
+        result = self.tools.invoke_tool(
+            "enter_game_world",
             {
                 "player_id": player_id,
                 "nickname": nickname,
@@ -200,7 +241,6 @@ class DirectorAgent:
     def get_npc_agent(self, npc_id: str) -> NpcGraphAgent:
         """获取或创建单个图 Agent。"""
         if npc_id not in self.npc_agents:
-            # 图 Agent 内部按每轮消息传入 npc_id，这里只复用编译后的图实例。
             self.npc_agents[npc_id] = NpcGraphAgent(
                 tools=self.tools,
                 llm_service=self.llm,
@@ -243,10 +283,10 @@ if __name__ == "__main__":
         scene.get("result", {}).get("session", {}).get("session_id")
         or "default_morning_session"
     )
-    director.select_npc(session_id=session_id, npc_id="barista_001")
+    director.select_npc(session_id=session_id, npc_id="brother_lu_qingya")
     reply = director.talk(
         player_id="p001",
         session_id=session_id,
-        message="门口打架的终于走了",
+        message="师兄在吗",
     )
     print("REPLY:", reply.get("reply") or reply.get("npc_reply"))

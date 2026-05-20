@@ -43,6 +43,7 @@ class DialogueMessageCreate(BaseModel):
     relationship_delta: JsonDict = Field(default_factory=dict)
     state_delta: JsonDict = Field(default_factory=dict)
     metadata_json: JsonDict = Field(default_factory=dict)
+    reply_latency_ms: int | None = None
 
 
 class PlayerMessageCreate(BaseModel):
@@ -63,6 +64,7 @@ class NpcReplyCreate(BaseModel):
     relationship_delta: RelationshipDelta = Field(default_factory=RelationshipDelta)
     state_delta: JsonDict = Field(default_factory=dict)
     metadata_json: JsonDict = Field(default_factory=dict)
+    reply_started_at: float | None = None
 
 
 class DialogueMessageRead(OrmSchema):
@@ -78,4 +80,5 @@ class DialogueMessageRead(OrmSchema):
     relationship_delta: JsonDict
     state_delta: JsonDict
     metadata_json: JsonDict
+    reply_latency_ms: int | None
     created_at: datetime

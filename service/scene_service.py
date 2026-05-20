@@ -8,18 +8,18 @@ from db.db_service import DbService
 from model.dialogue_model import DialogueSessionCreate, DialogueSessionRead
 from model.npc_model import NpcRead
 from model.player_model import PlayerCreate, PlayerRead
-from model.world_model import CafeWorldStateRead, EncounterRuleRead
+from model.world_model import WorldStateRead, EncounterRuleRead
 from service.dialogue_service import DialogueService
 from service.npc_service import NpcService
 from service.player_service import PlayerService
 from service.world_state_service import WorldStateService
 
 
-class MorningCafeSceneResult(dict):
+class GameSceneResult(dict):
     """Plain dict-compatible result for simple API serialization."""
 
 
-class CafeSceneService:
+class SceneService:
     def __init__(self, db: DbService | None = None):
         self.db = db or DbService()
         self._owns_db = db is None

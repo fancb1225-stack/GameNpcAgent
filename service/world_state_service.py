@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from db.db_config import CafeEvent, CafeWorldState, TimePeriod
+from db.db_config import Event, WorldState, TimePeriod
 from db.db_service import DbService
-from model.world_model import CafeEventRead, CafeWorldStateCreate, CafeWorldStateRead, CafeWorldStateUpdate, EncounterRuleRead
+from model.world_model import CafeEventRead, CafeWorldStateCreate, WorldStateRead, CafeWorldStateUpdate, EncounterRuleRead
 
 
 class WorldStateService:
@@ -14,17 +14,17 @@ class WorldStateService:
         if self._owns_db:
             self.db.close()
 
-    def create_world_state(self, data: CafeWorldStateCreate) -> CafeWorldStateRead:
-        state = self.db.create(CafeWorldState, data.model_dump())
-        return CafeWorldStateRead.model_validate(state)
+    def create_world_state(self, data: CafeWorldStateCreate) -> WorldStateRead:
+        state = self.db.create(WorldState, data.model_dump())
+        return WorldStateRead.model_validate(state)
 
-    def get_world_state(self, session_id: str = "default_morning_session") -> CafeWorldStateRead | None:
+    def get_world_state(self, session_id: str = "default_morning_session") -> WorldStateRead | None:
         state = self.db.get_world_state(session_id)
-        return CafeWorldStateRead.model_validate(state) if state else None
+        return WorldStateRead.model_validate(state) if state else None
 
-    def update_world_state(self, session_id: str, data: CafeWorldStateUpdate) -> CafeWorldStateRead | None:
+    def update_world_state(self, session_id: str, data: CafeWorldStateUpdate) -> WorldStateRead | None:
         state = self.db.update_world_state(session_id, **data.to_update_dict())
-        return CafeWorldStateRead.model_validate(state) if state else None
+        return WorldStateRead.model_validate(state) if state else None
 
     def list_active_events(self, time_period: TimePeriod | str | None = None) -> list[CafeEventRead]:
         rows = self.db.list_active_events(time_period=time_period)
@@ -40,11 +40,11 @@ class WorldStateService:
             return []
         return [item for item in (state.today_menu or []) if isinstance(item, dict) and item.get("available", True)]
 
-    def decrease_inventory(self, session_id: str, item_key: str, amount: int = 1) -> CafeWorldStateRead | None:
+    def decrease_inventory(self, session_id: str, item_key: str, amount: int = 1) -> WorldStateRead | None:
         state = self.db.get_world_state(session_id)
         if state is None:
             return None
         inventory = dict(state.inventory or {})
         inventory[item_key] = max(0, int(inventory.get(item_key, 0)) - amount)
         updated = self.db.update(state, {"inventory": inventory})
-        return CafeWorldStateRead.model_validate(updated)
+        return WorldStateRead.model_validate(updated)

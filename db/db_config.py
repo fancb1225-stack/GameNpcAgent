@@ -5,7 +5,7 @@ Install dependencies:
     pip install sqlalchemy psycopg2-binary python-dotenv
 
 Environment variables:
-    DATABASE_URL=postgresql+psycopg2://postgres:postgres@127.0.0.1:5432/coffee_npc_agent
+    DATABASE_URL=postgresql+psycopg2://postgres:postgres@127.0.0.1:5432/game_npc_frame
 """
 
 from __future__ import annotations
@@ -38,7 +38,7 @@ load_dotenv()
 
 DATABASE_URL = os.getenv(
     "DATABASE_URL",
-    "postgresql+psycopg2://postgres:root123456@127.0.0.1:5678/coffee_npc_agent",
+    "postgresql+psycopg2://postgres:root123456@127.0.0.1:5432/game_npc_frame",
 )
 
 engine = create_engine(
@@ -113,11 +113,9 @@ class MessageRole(StrEnum):
 
 class NpcAction(StrEnum):
     CHAT = "chat"
-    RECOMMEND_COFFEE = "recommend_coffee"
     ASK_PLAYER = "ask_player"
     COMMENT_ON_NPC = "comment_on_npc"
     MOVE_LOCATION = "move_location"
-    SERVE_CUSTOMER = "serve_customer"
     END_DIALOGUE = "end_dialogue"
 
 
@@ -135,6 +133,11 @@ class CoffeeKnowledgeCategory(StrEnum):
     MILK = "milk"
     FLAVOR = "flavor"
     MENU = "menu"
+
+
+class GameDocumentType(StrEnum):
+    GAME_SETTING = "game_setting"
+    NPC_SETTING = "npc_setting"
 
 
 class UUIDPrimaryKeyMixin:
@@ -206,8 +209,8 @@ class Relationship(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     last_interacted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
-class CafeWorldState(UUIDPrimaryKeyMixin, TimestampMixin, Base):
-    __tablename__ = "cafe_world_states"
+class WorldState(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    __tablename__ = "world_states"
 
     session_id: Mapped[str] = mapped_column(String(64), unique=True, index=True, nullable=False)
     time_period: Mapped[TimePeriod] = mapped_column(Enum(TimePeriod, name="time_period"), index=True, nullable=False)
@@ -220,9 +223,9 @@ class CafeWorldState(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     current_event_ids: Mapped[list[Any]] = mapped_column(JSONB, default=list, nullable=False)
 
 
-class CafeEvent(UUIDPrimaryKeyMixin, TimestampMixin, Base):
-    __tablename__ = "cafe_events"
-    __table_args__ = (Index("ix_cafe_event_active_period", "is_active", "time_period"),)
+class Event(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    __tablename__ = "events"
+    __table_args__ = (Index("ix_event_active_period", "is_active", "time_period"),)
 
     event_id: Mapped[str] = mapped_column(String(64), unique=True, index=True, nullable=False)
     title: Mapped[str] = mapped_column(String(128), nullable=False)
@@ -251,7 +254,7 @@ class DialogueSession(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     session_id: Mapped[str] = mapped_column(String(64), unique=True, index=True, nullable=False)
     player_id: Mapped[str] = mapped_column(String(64), nullable=False)
     selected_npc_id: Mapped[str | None] = mapped_column(String(64))
-    scene: Mapped[str] = mapped_column(Text, default="morning_cafe", nullable=False)
+    scene: Mapped[str] = mapped_column(Text, default="morning", nullable=False)
     time_period: Mapped[TimePeriod] = mapped_column(
         Enum(TimePeriod, name="dialogue_time_period"), default=TimePeriod.MORNING, nullable=False
     )
@@ -278,6 +281,7 @@ class DialogueMessage(UUIDPrimaryKeyMixin, Base):
     relationship_delta: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict, nullable=False)
     state_delta: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict, nullable=False)
     metadata_json: Mapped[dict[str, Any]] = mapped_column("metadata", JSONB, default=dict, nullable=False)
+    reply_latency_ms: Mapped[int | None] = mapped_column(Integer)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
 
 
@@ -321,32 +325,69 @@ class LongTermMemory(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     embedding: Mapped[list[float] | None] = mapped_column(Vector(EMBEDDING_DIM), nullable=True)
     embedding_model: Mapped[str | None] = mapped_column(String(128), nullable=True)
 
-class CoffeeKnowledge(UUIDPrimaryKeyMixin, TimestampMixin, Base):
-    __tablename__ = "coffee_knowledge"
-    __table_args__ = (Index("ix_coffee_knowledge_category_active", "category", "is_active"),)
 
-    knowledge_id: Mapped[str] = mapped_column(String(64), unique=True, index=True, nullable=False)
-    title: Mapped[str] = mapped_column(String(128), nullable=False)
-    content: Mapped[str] = mapped_column(Text, nullable=False)
-    category: Mapped[CoffeeKnowledgeCategory] = mapped_column(
-        Enum(CoffeeKnowledgeCategory, name="coffee_knowledge_category"), nullable=False
+class GameDocument(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    __tablename__ = "game_documents"
+    __table_args__ = (
+        Index("ix_game_document_type_created", "document_type", "created_at"),
     )
-    tags: Mapped[list[Any]] = mapped_column(JSONB, default=list, nullable=False)
-    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+
+    document_id: Mapped[str] = mapped_column(String(64), unique=True, index=True, nullable=False)
+    document_type: Mapped[GameDocumentType] = mapped_column(
+        Enum(GameDocumentType, name="game_document_type"),
+        nullable=False,
+        index=True,
+    )
+    filename: Mapped[str] = mapped_column(String(255), nullable=False)
+    metadata_json: Mapped[dict[str, Any]] = mapped_column(
+        "metadata",
+        JSONB,
+        default=dict,
+        nullable=False,
+    )
+
+
+class GameSettingChunk(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    __tablename__ = "game_setting_chunks"
+    __table_args__ = (
+        Index("ix_game_setting_chunk_document", "document_id", "chunk_index"),
+        Index(
+            "ix_game_setting_chunk_embedding_hnsw",
+            "embedding",
+            postgresql_using="hnsw",
+            postgresql_ops={"embedding": "vector_cosine_ops"},
+        ),
+    )
+
+    EMBEDDING_DIM = 384
+
+    chunk_id: Mapped[str] = mapped_column(String(64), unique=True, index=True, nullable=False)
+    document_id: Mapped[str] = mapped_column(String(64), index=True, nullable=False)
+    chunk_index: Mapped[int] = mapped_column(Integer, nullable=False)
+    content: Mapped[str] = mapped_column(Text, nullable=False)
+    embedding: Mapped[list[float] | None] = mapped_column(Vector(EMBEDDING_DIM), nullable=True)
+    embedding_model: Mapped[str | None] = mapped_column(String(128))
+    metadata_json: Mapped[dict[str, Any]] = mapped_column(
+        "metadata",
+        JSONB,
+        default=dict,
+        nullable=False,
+    )
 
 
 MODEL_REGISTRY: dict[str, type[Base]] = {
     "players": Player,
     "npcs": Npc,
     "relationships": Relationship,
-    "cafe_world_states": CafeWorldState,
-    "cafe_events": CafeEvent,
+    "world_states": WorldState,
+    "events": Event,
     "encounter_rules": EncounterRule,
     "dialogue_sessions": DialogueSession,
     "dialogue_messages": DialogueMessage,
     "short_term_memories": ShortTermMemory,
     "long_term_memories": LongTermMemory,
-    "coffee_knowledge": CoffeeKnowledge,
+    "game_documents": GameDocument,
+    "game_setting_chunks": GameSettingChunk,
 }
 
 

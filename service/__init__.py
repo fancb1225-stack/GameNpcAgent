@@ -1,5 +1,4 @@
-from service.cafe_scene_service import CafeSceneService
-from service.coffee_knowledge_service import CoffeeKnowledgeService
+from service.scene_service import SceneService
 from service.dialogue_service import DialogueService
 from service.long_memory_service import LongMemoryService
 from service.npc_service import NpcService

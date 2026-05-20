@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import time
 from typing import Any
 
 from db.db_config import MessageRole, NpcAction, SessionStatus, SourceType
@@ -90,6 +91,15 @@ class DialogueService:
             )
         if data.action == NpcAction.END_DIALOGUE:
             self.end_session(data.session_id)
+        if data.reply_started_at is not None:
+            latency_ms = max(0, int(round((time.perf_counter() - data.reply_started_at) * 1000)))
+            message_orm = self.db.get_by_id(self.db._model("dialogue_messages"), message.id)
+            if message_orm is not None:
+                message_orm = self.db.update(
+                    message_orm,
+                    {"reply_latency_ms": latency_ms},
+                )
+                return DialogueMessageRead.model_validate(message_orm)
         return message
 
     def list_messages(

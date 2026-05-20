@@ -35,7 +35,7 @@ class CafeWorldStateUpdate(BaseModel):
         return self.model_dump(exclude_none=True)
 
 
-class CafeWorldStateRead(OrmSchema):
+class WorldStateRead(OrmSchema):
     id: UUID
     session_id: str
     time_period: TimePeriod

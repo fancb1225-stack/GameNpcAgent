@@ -73,7 +73,7 @@ class LlmClient:
     """包装项目内 LlmService，维护对话历史。"""
 
     def __init__(self) -> None:
-        self.model = LlmService.getLLM()
+        self.model = LlmService.getDeepSeek_pro()
         self.history: list[dict[str, str]] = []
 
     def chat(self, prompt: str, system_prompt: str = "", keep_history: bool = False) -> str:
@@ -250,8 +250,8 @@ def ask_player_llm(
         dialogue_history=dialogue_history,
     )
     return llm.chat(
-        prompt=prompt,
-        system_prompt="你是 NPC 评测里的玩家，只输出一句玩家输入。",
+        prompt="你在扮演 NPC 评测里的玩家，只输出一句玩家输入，字数在80字以内。",
+        system_prompt=prompt,
         keep_history=False,
     )
 
@@ -320,7 +320,9 @@ def run_dimension(
         lines.append(f"对话轮次[{round_index}]：")
         lines.append(f"[llm]: {player_message}")
         lines.append(f"[npc]: {npc_reply}")
-
+        print(f"对话轮次[{round_index}]：")
+        print(f"[llm]: {player_message}")
+        print(f"[npc]: {npc_reply}\n")
     return "\n".join(lines).strip()
 
 

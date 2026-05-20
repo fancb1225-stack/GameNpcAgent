@@ -6,12 +6,12 @@ from typing import Any
 from uuid import uuid4
 
 from sqlalchemy import select
-from twisted.conch.ssh.connection import messages
 
 from agent import llm_service
 from agent.llm_service import LlmService
 from db.db_config import DbSessionLocal, LongTermMemory, MemoryType
 from db.db_service import DbService
+from db.hybrid_retrieval import rank_hybrid_results
 from model.memory_model import LongTermMemoryCreate, LongTermMemoryRead
 from service.embedding_service import EmbeddingService
 
@@ -153,21 +153,12 @@ class LongMemoryService:
             return self.list_long_memories(player_id=player_id, npc_id=npc_id, limit=limit)
 
         query_embedding = self._embed_query_safely(query)
-        if query_embedding is not None:
-            vector_result = self._search_by_vector(
-                player_id=player_id,
-                npc_id=npc_id,
-                query_embedding=query_embedding,
-                memory_type=memory_type,
-                limit=limit,
-            )
-            if vector_result:
-                return vector_result
-
-        return self._search_by_text(
+        return self._search_by_hybrid(
             player_id=player_id,
             npc_id=npc_id,
             query=query,
+            query_embedding=query_embedding,
+            memory_type=memory_type,
             limit=limit,
         )
 
@@ -230,6 +221,117 @@ class LongMemoryService:
             dialogue_text=dialogue_text,
             source_message_ids=source_message_ids,
         )
+
+    def _search_by_hybrid(
+        self,
+        player_id: str,
+        npc_id: str | None,
+        query: str,
+        query_embedding: list[float] | None,
+        memory_type: str | None,
+        limit: int,
+    ) -> list[dict[str, Any]]:
+        """使用候选记忆的 BM25 分和向量分进行混合排序。"""
+
+        candidate_limit = max(20, min(max(1, int(limit)) * 10, 200))
+        rows = self._load_memory_candidates(
+            player_id=player_id,
+            npc_id=npc_id,
+            query_embedding=query_embedding,
+            memory_type=memory_type,
+            limit=candidate_limit,
+        )
+        if not rows:
+            return []
+
+        ranked = rank_hybrid_results(
+            rows,
+            query=query,
+            content_getter=lambda item: (
+                f"{item['memory'].title}\n{item['memory'].content}"
+            ),
+            distance_getter=lambda item: item.get("distance"),
+            limit=limit,
+            vector_weight=0.5,
+            bm25_weight=0.5,
+        )
+        memories = []
+        for row in ranked:
+            item = self._serialize_long_term_memory(row["item"]["memory"])
+            item["distance"] = row["distance"]
+            item["similarity"] = row["vector_score"]
+            item["vector_score"] = row["vector_score"]
+            item["bm25_score"] = row["bm25_score"]
+            item["hybrid_score"] = row["hybrid_score"]
+            memories.append(item)
+        return memories
+
+    def _load_memory_candidates(
+        self,
+        player_id: str,
+        npc_id: str | None,
+        query_embedding: list[float] | None,
+        memory_type: str | None,
+        limit: int,
+    ) -> list[dict[str, Any]]:
+        """加载长期记忆候选集，存在向量时一并计算 cosine distance。"""
+
+        with DbSessionLocal() as session:
+            if query_embedding is not None:
+                stmt = (
+                    select(
+                        LongTermMemory,
+                        LongTermMemory.embedding.cosine_distance(query_embedding).label(
+                            "distance"
+                        ),
+                    )
+                    .where(LongTermMemory.player_id == player_id)
+                    .where(LongTermMemory.embedding.is_not(None))
+                )
+                if npc_id:
+                    stmt = stmt.where(LongTermMemory.npc_id == npc_id)
+                if memory_type:
+                    stmt = stmt.where(LongTermMemory.memory_type == MemoryType(memory_type))
+                rows = session.execute(stmt.order_by("distance").limit(limit)).all()
+                candidates = [
+                    {"memory": memory, "distance": float(distance)}
+                    for memory, distance in rows
+                ]
+                seen_ids = {item["memory"].memory_id for item in candidates}
+                remaining_limit = max(0, limit - len(candidates))
+                if remaining_limit:
+                    null_stmt = (
+                        select(LongTermMemory)
+                        .where(LongTermMemory.player_id == player_id)
+                        .where(LongTermMemory.embedding.is_(None))
+                    )
+                    if npc_id:
+                        null_stmt = null_stmt.where(LongTermMemory.npc_id == npc_id)
+                    if memory_type:
+                        null_stmt = null_stmt.where(
+                            LongTermMemory.memory_type == MemoryType(memory_type)
+                        )
+                    null_rows = session.scalars(
+                        null_stmt.order_by(LongTermMemory.importance.desc()).limit(
+                            remaining_limit
+                        )
+                    ).all()
+                    candidates.extend(
+                        {"memory": memory, "distance": None}
+                        for memory in null_rows
+                        if memory.memory_id not in seen_ids
+                    )
+                return candidates
+
+            stmt = select(LongTermMemory).where(LongTermMemory.player_id == player_id)
+            if npc_id:
+                stmt = stmt.where(LongTermMemory.npc_id == npc_id)
+            if memory_type:
+                stmt = stmt.where(LongTermMemory.memory_type == MemoryType(memory_type))
+            rows = session.scalars(
+                stmt.order_by(LongTermMemory.importance.desc()).limit(limit)
+            ).all()
+            return [{"memory": memory, "distance": None} for memory in rows]
 
     def _search_by_vector(
         self,
@@ -367,7 +469,11 @@ class LongMemoryService:
             "npc_id": row.npc_id,
             "title": row.title,
             "content": row.content,
-            "memory_type": row.memory_type.value if hasattr(row.memory_type, "value") else row.memory_type,
+            "memory_type": (
+                row.memory_type.value
+                if hasattr(row.memory_type, "value")
+                else row.memory_type
+            ),
             "importance": row.importance,
             "embedding_model": row.embedding_model,
             "source_message_ids": row.source_message_ids or [],
@@ -440,5 +546,9 @@ class LongMemoryService:
 
 if __name__ == "__main__":
     service = LongMemoryService()
-    result = service.search_long_memories(player_id='p001', npc_id='passerby_001', query='NPC喜爱拍照和甜品，期待下次一起喝焦糖拿铁拍照')
+    result = service.search_long_memories(
+        player_id="p001",
+        npc_id="passerby_001",
+        query="NPC喜爱拍照和甜品，期待下次一起喝焦糖拿铁拍照",
+    )
     print(result)

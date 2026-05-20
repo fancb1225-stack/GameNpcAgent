@@ -1,0 +1,7 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python -m pytest tests/test_npc_graph_agent.py -v)"
+    ]
+  }
+}

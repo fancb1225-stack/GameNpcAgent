@@ -179,6 +179,7 @@ def upgrade() -> None:
         sa.Column("relationship_delta", sa.JSON(), nullable=False),
         sa.Column("state_delta", sa.JSON(), nullable=False),
         sa.Column("metadata", sa.JSON(), nullable=False),
+        sa.Column("reply_latency_ms", sa.Integer(), nullable=True),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
     )
     op.create_index(
