@@ -1,2 +1,4 @@
 /AgentEval/
 /tests/
+/.env/
+/agent.agent_config/

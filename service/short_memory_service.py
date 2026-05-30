@@ -11,8 +11,8 @@ from model.memory_model import ShortMemoryMessage, ShortTermMemoryRead
 class ShortMemoryService:
     """短期记忆服务，只维护玩家与 NPC 的滑动窗口。"""
 
-    SHORT_TERM_LIMIT = 20
-    ARCHIVE_BATCH_SIZE = 10
+    SHORT_TERM_LIMIT = 10
+    ARCHIVE_BATCH_SIZE = 5
 
     def __init__(self, db: DbService | None = None):
         self.db = db or DbService()

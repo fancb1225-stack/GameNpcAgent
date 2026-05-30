@@ -43,6 +43,7 @@ def import_graph_agent(monkeypatch):
         def __init__(self, state_schema=None, input=None, output=None):
             self._nodes = {}
             self._edges = []
+            self._conditional_edges = {}
             self._input = input
             self._output = output
 
@@ -53,20 +54,49 @@ def import_graph_agent(monkeypatch):
             self._edges.append((source, target))
 
         def add_conditional_edges(self, source, router, mapping):
-            pass
+            self._conditional_edges[source] = (router, mapping)
 
         def compile(self):
             return self
 
         def invoke(self, state):
             result = dict(state)
-            for name, handler in self._nodes.items():
+            current = graph_module.START
+            while True:
+                if current == graph_module.END:
+                    break
+
+                # 按显式边推进测试图，模拟 LangGraph 的路由语义。
+                next_nodes = [target for source, target in self._edges if source == current]
+                if not next_nodes:
+                    break
+
+                current = next_nodes[0]
+                if current == graph_module.END:
+                    break
+
+                handler = self._nodes[current]
                 update = handler(result)
                 if update:
                     result.update(update)
+
+                if current in self._conditional_edges:
+                    router, mapping = self._conditional_edges[current]
+                    route_key = router(result)
+                    current = mapping[route_key]
+                    if current == graph_module.END:
+                        break
+                    handler = self._nodes[current]
+                    update = handler(result)
+                    if update:
+                        result.update(update)
             # Only return output fields
             if self._output:
-                output_fields = set(self._output.__annotations__.keys()) if hasattr(self._output, '__annotations__') else set(result.keys())
+                output_fields = (
+                    set(self._output.__annotations__.keys())
+                    if hasattr(self._output, '__annotations__')
+                    else set(result.keys())
+                )
                 return {k: v for k, v in result.items() if k in output_fields}
             return result
 
@@ -100,8 +130,52 @@ class FakeTools:
             return {"ok": True, "tool_name": tool_name}
         if tool_name == "update_player_profile":
             return {"ok": True, "tool_name": tool_name}
+        if tool_name == "get_player_relationships":
+            return {
+                "ok": True,
+                "tool_name": tool_name,
+                "relationships": [
+                    {
+                        "id": "rel-row-001",
+                        "target_id": "brother_lu_qingya",
+                        "trust": 6,
+                        "familiarity": 7,
+                        "fondness": 4,
+                        "dislike": 0,
+                        "stress": 1,
+                        "created_at": "2026-05-20T10:00:00",
+                        "updated_at": "2026-05-20T10:01:00",
+                    }
+                ],
+            }
+        if tool_name == "get_npc_state" and (arguments or {}).get("npc_id") == "__list_all__":
+            return {
+                "ok": True,
+                "tool_name": tool_name,
+                "npcs": [
+                    {
+                        "id": "npc-row-001",
+                        "npc_id": "brother_lu_qingya",
+                        "name": "陆青崖",
+                        "role": "玩家的师兄弟",
+                        "background": "玩家常称其为陆师兄。",
+                        "create_time": "2026-05-20T10:00:00",
+                        "update_time": "2026-05-20T10:01:00",
+                    }
+                ],
+                "count": 1,
+            }
 
         return {"ok": True, "tool_name": tool_name}
+
+
+class DeferredExecutor:
+    def __init__(self):
+        self.submissions = []
+
+    def submit(self, fn, *args, **kwargs):
+        self.submissions.append((fn, args, kwargs))
+        return {"scheduled": True}
 
 
 class FakeLlm:
@@ -116,6 +190,22 @@ class FakeLlm:
             "system_prompt": system_prompt,
         })
         return self.response, []
+
+
+class SequenceFakeLlm:
+    def __init__(self, responses):
+        self.responses = list(responses)
+        self.calls = []
+
+    def chat(self, prompt, history=None, system_prompt=""):
+        self.calls.append({
+            "prompt": prompt,
+            "history": history or [],
+            "system_prompt": system_prompt,
+        })
+        if not self.responses:
+            return "{}", []
+        return self.responses.pop(0), []
 
 
 class FailingLlm:
@@ -242,7 +332,10 @@ def test_decide_action_uses_injected_llm_and_extracts_json(monkeypatch):
 def test_decide_action_uses_structured_prompt_contract(monkeypatch):
     npc_graph_agent = import_graph_agent(monkeypatch)
     tools = FakeTools()
-    llm = FakeLlm('{"intent": "ask_lore", "action": "chat", "line": "雪州很冷。"}')
+    llm = SequenceFakeLlm([
+        '{"need_retrieval": false, "reason": "本测试只验证决策契约"}',
+        '{"intent": "ask_lore", "action": "chat", "line": "雪州很冷。"}',
+    ])
 
     agent = npc_graph_agent.NpcGraphAgent(tools=tools, llm_service=llm)
     agent.graph.invoke({
@@ -252,8 +345,9 @@ def test_decide_action_uses_structured_prompt_contract(monkeypatch):
         "player_message": "雪州是什么地方",
     })
 
-    prompt_payload = json.loads(llm.calls[0]["prompt"])
-    system_prompt = llm.calls[0]["system_prompt"]
+    # 第二次模型调用进入决策节点，验证原有决策契约仍然稳定。
+    prompt_payload = json.loads(llm.calls[1]["prompt"])
+    system_prompt = llm.calls[1]["system_prompt"]
     assert prompt_payload["task"] == "npc_dialogue_decision"
     assert "decision_contract" in prompt_payload
     assert "allowed_actions" in prompt_payload["decision_contract"]
@@ -319,6 +413,223 @@ def test_retrieve_memories_uses_player_message_as_long_term_query(monkeypatch):
     assert long_memory_call["query"] == "我想喝不太酸的拿铁"
 
 
+def test_react_planner_skips_game_setting_when_not_needed(monkeypatch):
+    npc_graph_agent = import_graph_agent(monkeypatch)
+    tools = FakeTools()
+    llm = SequenceFakeLlm([
+        '{"need_retrieval": false, "reason": "普通寒暄不需要设定"}',
+        '{"intent": "greet", "action": "chat", "line": "早，风雪还没停。"}',
+    ])
+
+    agent = npc_graph_agent.NpcGraphAgent(tools=tools, llm_service=llm)
+    result = agent.graph.invoke({
+        "session_id": "s001",
+        "player_id": "p001",
+        "npc_id": "npc_001",
+        "player_message": "早啊",
+    })
+
+    game_setting_calls = [
+        args for name, args in tools.calls
+        if name == "get_game_setting_context"
+    ]
+    planner_payload = json.loads(llm.calls[0]["prompt"])
+    assert game_setting_calls == []
+    assert planner_payload["task"] == "plan_game_setting_retrieval"
+    assert result.get("npc_reply") == "早，风雪还没停。"
+
+
+def test_react_planner_retrieves_game_setting_with_model_query(monkeypatch):
+    npc_graph_agent = import_graph_agent(monkeypatch)
+    tools = FakeTools()
+    llm = SequenceFakeLlm([
+        json.dumps({
+            "need_retrieval": True,
+            "tool_call": {
+                "tool_name": "get_game_setting_context",
+                "arguments": {"query": "玄京 雪州 关系", "limit": 4},
+            },
+            "reason": "玩家询问世界设定事实",
+        }, ensure_ascii=False),
+        '{"intent": "ask_lore", "action": "chat", "line": "玄京与雪州向来隔着风雪与旧怨。"}',
+    ])
+
+    agent = npc_graph_agent.NpcGraphAgent(tools=tools, llm_service=llm)
+    agent.graph.invoke({
+        "session_id": "s001",
+        "player_id": "p001",
+        "npc_id": "npc_001",
+        "player_message": "玄京和雪州到底是什么关系？",
+    })
+
+    game_setting_calls = [
+        args for name, args in tools.calls
+        if name == "get_game_setting_context"
+    ]
+    assert game_setting_calls == [{"query": "玄京 雪州 关系", "limit": 4}]
+
+
+def test_react_planner_rejects_illegal_tool_call(monkeypatch):
+    npc_graph_agent = import_graph_agent(monkeypatch)
+    tools = FakeTools()
+    llm = SequenceFakeLlm([
+        json.dumps({
+            "need_retrieval": True,
+            "tool_call": {
+                "tool_name": "web_search",
+                "arguments": {"query": "玄京"},
+            },
+            "reason": "错误地请求外部工具",
+        }, ensure_ascii=False),
+        '{"intent": "ask_lore", "action": "chat", "line": "这事我不敢乱说。"}',
+    ])
+
+    agent = npc_graph_agent.NpcGraphAgent(tools=tools, llm_service=llm)
+    agent.graph.invoke({
+        "session_id": "s001",
+        "player_id": "p001",
+        "npc_id": "npc_001",
+        "player_message": "玄京是什么？",
+    })
+
+    blocked_calls = [
+        args for name, args in tools.calls
+        if name == "web_search" or name == "get_game_setting_context"
+    ]
+    assert blocked_calls == []
+
+
+def test_load_context_includes_npc_directory_and_player_relationships(monkeypatch):
+    npc_graph_agent = import_graph_agent(monkeypatch)
+    tools = FakeTools()
+
+    agent = npc_graph_agent.NpcGraphAgent(tools=tools, llm_service=None)
+    result = agent.graph.invoke({
+        "session_id": "s001",
+        "player_id": "p001",
+        "npc_id": "master_shen_zhaowei",
+        "player_message": "陆师兄要和我一起下山吗？",
+    })
+
+    assert result.get("action") == "chat"
+    assert ("get_npc_state", {"npc_id": "__list_all__"}) in tools.calls
+    assert ("get_player_relationships", {"player_id": "p001"}) in tools.calls
+
+
+def test_retrieval_planner_prompt_contains_npc_directory(monkeypatch):
+    npc_graph_agent = import_graph_agent(monkeypatch)
+    tools = FakeTools()
+    llm = SequenceFakeLlm([
+        json.dumps({
+            "need_retrieval": True,
+            "tool_call": {
+                "tool_name": "get_game_setting_context",
+                "arguments": {"query": "陆青崖 陆师兄 下山", "limit": 5},
+            },
+            "reason": "玩家询问其他 NPC 设定",
+        }, ensure_ascii=False),
+        '{"intent": "ask_lore", "action": "chat", "line": "我先确认陆青崖的安排。"}',
+    ])
+
+    agent = npc_graph_agent.NpcGraphAgent(tools=tools, llm_service=llm)
+    agent.graph.invoke({
+        "session_id": "s001",
+        "player_id": "p001",
+        "npc_id": "master_shen_zhaowei",
+        "player_message": "陆师兄要和我一起下山吗？",
+    })
+
+    planner_payload = json.loads(llm.calls[0]["prompt"])
+    assert planner_payload["context"]["npc_directory"]["npcs"][0]["name"] == "陆青崖"
+    assert (
+        planner_payload["context"]["player_npc_relationships"]["relationships"][0]
+        ["target_id"] == "brother_lu_qingya"
+    )
+
+
+def test_decision_prompt_forbids_answering_without_setting_evidence(monkeypatch):
+    npc_graph_agent = import_graph_agent(monkeypatch)
+    tools = FakeTools()
+    llm = SequenceFakeLlm([
+        '{"need_retrieval": false, "reason": "只验证决策约束"}',
+        '{"intent": "ask_lore", "action": "chat", "line": "我不确定。"}',
+    ])
+
+    agent = npc_graph_agent.NpcGraphAgent(tools=tools, llm_service=llm)
+    agent.graph.invoke({
+        "session_id": "s001",
+        "player_id": "p001",
+        "npc_id": "master_shen_zhaowei",
+        "player_message": "陆师兄要和我一起下山吗？",
+    })
+
+    decision_payload = json.loads(llm.calls[1]["prompt"])
+    system_prompt = llm.calls[1]["system_prompt"]
+    assert "npc_directory" in decision_payload["context"]
+    assert "player_npc_relationships" in decision_payload["context"]
+    assert "不能编造" in system_prompt
+    assert "游戏设定或 NPC 设定" in system_prompt
+
+
+def test_llm_prompts_strip_database_metadata_fields(monkeypatch):
+    npc_graph_agent = import_graph_agent(monkeypatch)
+    tools = FakeTools()
+    llm = SequenceFakeLlm([
+        '{"need_retrieval": false, "reason": "只验证上下文压缩"}',
+        '{"intent": "chat", "action": "chat", "line": "我知道了。"}',
+    ])
+
+    agent = npc_graph_agent.NpcGraphAgent(tools=tools, llm_service=llm)
+    agent.graph.invoke({
+        "session_id": "s001",
+        "player_id": "p001",
+        "npc_id": "master_shen_zhaowei",
+        "player_message": "陆师兄是谁？",
+    })
+
+    # 所有进入 LLM 的 prompt 都不应携带数据库行元数据。
+    forbidden_fields = {"id", "created_at", "updated_at", "create_time", "update_time"}
+    for call in llm.calls:
+        payload = json.loads(call["prompt"])
+        serialized = json.dumps(payload, ensure_ascii=False)
+        for field_name in forbidden_fields:
+            assert f'"{field_name}"' not in serialized
+
+
+def test_profile_extraction_prompt_strips_database_metadata(monkeypatch):
+    npc_graph_agent = import_graph_agent(monkeypatch)
+    tools = FakeTools()
+    llm = FakeLlm('{"taste_preferences": {"likes_tea": true}}')
+    messages = [
+        {
+            "id": "msg-row-001",
+            "role": "player",
+            "content": "我喜欢清茶。",
+            "created_at": "2026-05-20T10:00:00",
+            "update_time": "2026-05-20T10:01:00",
+        }
+    ]
+
+    npc_graph_agent._extract_player_profile_patch_from_messages(
+        tools=tools,
+        llm_service=llm,
+        player_id="p001",
+        current_profile={
+            "id": "player-row-001",
+            "nickname": "少侠",
+            "updated_at": "2026-05-20T10:02:00",
+        },
+        messages=messages,
+    )
+
+    payload = json.loads(llm.calls[0]["prompt"])
+    serialized = json.dumps(payload, ensure_ascii=False)
+    assert '"id"' not in serialized
+    assert '"created_at"' not in serialized
+    assert '"updated_at"' not in serialized
+    assert '"update_time"' not in serialized
+
+
 def test_write_memory_appends_player_and_npc_short_messages_synchronously(monkeypatch):
     npc_graph_agent = import_graph_agent(monkeypatch)
     tools = FakeTools()
@@ -361,10 +672,15 @@ def test_write_memory_passes_reply_started_at_to_npc_reply(monkeypatch):
     assert npc_reply_calls[0]["reply_started_at"] is not None
 
 
-def test_write_memory_archives_overflow_with_long_memory_service(monkeypatch):
+def test_write_memory_schedules_overflow_archive_without_blocking(monkeypatch):
     npc_graph_agent = import_graph_agent(monkeypatch)
     tools = FakeTools()
-    llm = FakeLlm('{"intent": "chat", "action": "chat", "line": "我记住了。", "emotion": "pleased"}')
+    llm = SequenceFakeLlm([
+        '{"need_retrieval": false, "reason": "本测试只验证后台归档"}',
+        '{"intent": "chat", "action": "chat", "line": "我记住了。", "emotion": "pleased"}',
+        '{"taste_preferences": {"likes_latte": true}}',
+    ])
+    executor = DeferredExecutor()
     tools.append_results = [
         {"ok": True, "needs_archive": False, "short_term_count": 20},
         {
@@ -377,7 +693,11 @@ def test_write_memory_archives_overflow_with_long_memory_service(monkeypatch):
         },
     ]
 
-    agent = npc_graph_agent.NpcGraphAgent(tools=tools, llm_service=llm)
+    agent = npc_graph_agent.NpcGraphAgent(
+        tools=tools,
+        llm_service=llm,
+        background_executor=executor,
+    )
     agent.graph.invoke({
         "session_id": "s001",
         "player_id": "p001",
@@ -385,9 +705,23 @@ def test_write_memory_archives_overflow_with_long_memory_service(monkeypatch):
         "player_message": "我经常点拿铁",
     })
 
+    # 返回前只调度后台任务，不执行长期记忆写入，也不更新画像。
+    assert len(executor.submissions) == 1
+    assert [
+        name for name, _ in tools.calls
+        if name in {"create_long_term_memory_from_messages", "update_player_profile"}
+    ] == []
+
+    fn, args, kwargs = executor.submissions[0]
+    fn(*args, **kwargs)
+
     long_calls = [
         args for name, args in tools.calls
         if name == "create_long_term_memory_from_messages"
+    ]
+    profile_calls = [
+        args for name, args in tools.calls
+        if name == "update_player_profile"
     ]
     trim_calls = [
         args for name, args in tools.calls
@@ -395,6 +729,9 @@ def test_write_memory_archives_overflow_with_long_memory_service(monkeypatch):
     ]
     assert long_calls[0]["messages"] == [{"role": "player", "content": "旧消息"}]
     assert long_calls[0]["llm_service"] is llm
+    profile_prompt = json.loads(llm.calls[-1]["prompt"])
+    assert profile_prompt["source_messages"] == [{"role": "player", "content": "旧消息"}]
+    assert "taste_preferences" in profile_calls[0]["profile_patch"]
     assert trim_calls[0]["remove_count"] == 1
 
 
@@ -439,28 +776,37 @@ def test_tools_get_long_term_memories_searches_when_query_is_provided():
     assert tools.long_memories.list_calls == []
 
 
-def test_graph_topology_is_linear_eight_nodes(monkeypatch):
+def test_graph_topology_has_react_rag_branch(monkeypatch):
     npc_graph_agent = import_graph_agent(monkeypatch)
     nodes = npc_graph_agent.NPC_GRAPH_NODES
     edges = npc_graph_agent.NPC_GRAPH_EDGES
 
-    assert len(nodes) == 8
+    assert len(nodes) == 10
     assert nodes[0] == "load_context"
     assert nodes[-1] == "write_memory"
-    # All edges are linear (no conditional edges)
-    assert len(edges) == 9  # START->node + 7 node->node + node->END
-    for source, target in edges[1:-1]:
-        # Each intermediate edge connects consecutive nodes
-        assert source in nodes
-        assert target in nodes
+    assert "plan_game_setting_retrieval" in nodes
+    assert "retrieve_game_setting" in nodes
+    assert ("retrieve_memories", "plan_game_setting_retrieval") in edges
+    assert ("retrieve_game_setting", "decide_action") in edges
+    assert npc_graph_agent.NPC_GRAPH_CONDITIONAL_EDGES == {
+        "plan_game_setting_retrieval": {
+            "retrieve": "retrieve_game_setting",
+            "skip": "decide_action",
+        }
+    }
 
 
-def test_update_player_profile_uses_llm_extraction(monkeypatch):
+def test_update_player_profile_waits_for_short_memory_archive(monkeypatch):
     npc_graph_agent = import_graph_agent(monkeypatch)
     tools = FakeTools()
     llm = FakeLlm('{"taste_preferences": {"likes_latte": true}}')
+    executor = DeferredExecutor()
 
-    agent = npc_graph_agent.NpcGraphAgent(tools=tools, llm_service=llm)
+    agent = npc_graph_agent.NpcGraphAgent(
+        tools=tools,
+        llm_service=llm,
+        background_executor=executor,
+    )
     result = agent.graph.invoke({
         "session_id": "s001",
         "player_id": "p001",
@@ -468,10 +814,10 @@ def test_update_player_profile_uses_llm_extraction(monkeypatch):
         "player_message": "我喜欢甜一点的拿铁",
     })
 
-    # Verify update_player_profile was called via tools
+    # 没有触发短期记忆归档时，不单独阻塞式更新玩家画像。
     profile_calls = [args for name, args in tools.calls if name == "update_player_profile"]
-    assert len(profile_calls) >= 1
-    assert "taste_preferences" in profile_calls[0]["profile_patch"]
+    assert profile_calls == []
+    assert executor.submissions == []
 
 
 def test_update_player_profile_skips_when_no_llm(monkeypatch):

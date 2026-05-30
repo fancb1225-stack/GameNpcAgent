@@ -260,3 +260,271 @@ RuntimeError: 模型调用失败
 2026-05-20 19:28:36,695 INFO [agent.npc_graph_agent] [decide_action] LLM 耗时 0.00s, 返回(前300字): {"taste_preferences": {"likes_latte": true}}
 2026-05-20 19:28:36,695 INFO [agent.npc_graph_agent] [update_player_profile] result={'ok': True, 'tool_name': 'update_player_profile'}
 2026-05-20 19:28:36,697 INFO [agent.npc_graph_agent] [decide_action] llm_service=None, type=None
+2026-05-20 22:47:14,166 INFO [api.main] [_create_llm_if_enabled] LLM 创建成功: FakeLlm
+2026-05-20 22:47:14,193 WARNING [api.main] [_create_llm_if_enabled] ENABLE_LLM=false，LLM 已禁用
+2026-05-20 22:47:20,332 INFO [agent.director_agent] [DirectorAgent] llm=FakeLlm
+2026-05-20 22:47:20,335 INFO [agent.director_agent] [DirectorAgent] llm=None
+2026-05-20 22:47:20,340 INFO [agent.director_agent] [DirectorAgent] llm=FakeLlm
+2026-05-20 22:47:20,371 INFO [agent.npc_graph_agent] [decide_action] llm_service=<test_npc_graph_agent.FakeLlm object at 0x0000011FEDAAE7B0>, type=FakeLlm
+2026-05-20 22:47:20,390 INFO [agent.npc_graph_agent] [decide_action] LLM 耗时 0.00s, 返回(前300字): {"intent": "greet", "action": "chat", "line": "你好呀"}
+2026-05-20 22:47:20,394 INFO [agent.npc_graph_agent] [decide_action] llm_service=<test_npc_graph_agent.SequenceFakeLlm object at 0x0000011FEE1C4590>, type=SequenceFakeLlm
+2026-05-20 22:47:20,394 INFO [agent.npc_graph_agent] [decide_action] LLM 耗时 0.00s, 返回(前300字): {"intent": "ask_lore", "action": "chat", "line": "雪州很冷。"}
+2026-05-20 22:47:20,399 ERROR [agent.npc_graph_agent] [plan_game_setting_retrieval] LLM 调用异常
+Traceback (most recent call last):
+  File "C:\Users\59493\Desktop\GameNpcFrame\agent\npc_graph_agent.py", line 560, in plan_game_setting_retrieval
+    response, _ = llm_service.chat(
+                  ~~~~~~~~~~~~~~~~^
+        prompt=prompt,
+        ^^^^^^^^^^^^^^
+        history=[],
+        ^^^^^^^^^^^
+        system_prompt=GAME_SETTING_RETRIEVAL_SYSTEM_PROMPT,
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "C:\Users\59493\Desktop\GameNpcFrame\tests\test_npc_graph_agent.py", line 182, in chat
+    raise RuntimeError("模型调用失败")
+RuntimeError: 模型调用失败
+2026-05-20 22:47:20,402 INFO [agent.npc_graph_agent] [decide_action] llm_service=<test_npc_graph_agent.FailingLlm object at 0x0000011FEE1C5BE0>, type=FailingLlm
+2026-05-20 22:47:20,402 ERROR [agent.npc_graph_agent] [decide_action] LLM 调用异常
+Traceback (most recent call last):
+  File "C:\Users\59493\Desktop\GameNpcFrame\agent\npc_graph_agent.py", line 631, in decide_action
+    response, _ = llm_service.chat(
+                  ~~~~~~~~~~~~~~~~^
+        prompt=prompt,
+        ^^^^^^^^^^^^^^
+        history=[],
+        ^^^^^^^^^^^
+        system_prompt=DECISION_SYSTEM_PROMPT,
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "C:\Users\59493\Desktop\GameNpcFrame\tests\test_npc_graph_agent.py", line 182, in chat
+    raise RuntimeError("模型调用失败")
+RuntimeError: 模型调用失败
+2026-05-20 22:47:20,406 INFO [agent.npc_graph_agent] [decide_action] llm_service=<test_npc_graph_agent.FakeLlm object at 0x0000011FEE487ED0>, type=FakeLlm
+2026-05-20 22:47:20,406 INFO [agent.npc_graph_agent] [decide_action] LLM 耗时 0.00s, 返回(前300字): {"intent": "greet", "action": "chat", "line": "已经有台词"}
+2026-05-20 22:47:20,408 INFO [agent.npc_graph_agent] [decide_action] llm_service=None, type=None
+2026-05-20 22:47:20,410 INFO [agent.npc_graph_agent] [decide_action] llm_service=<test_npc_graph_agent.SequenceFakeLlm object at 0x0000011FEE487750>, type=SequenceFakeLlm
+2026-05-20 22:47:20,410 INFO [agent.npc_graph_agent] [decide_action] LLM 耗时 0.00s, 返回(前300字): {"intent": "greet", "action": "chat", "line": "早，风雪还没停。"}
+2026-05-20 22:47:20,412 INFO [agent.npc_graph_agent] [decide_action] llm_service=<test_npc_graph_agent.SequenceFakeLlm object at 0x0000011FEE486850>, type=SequenceFakeLlm
+2026-05-20 22:47:20,412 INFO [agent.npc_graph_agent] [decide_action] LLM 耗时 0.00s, 返回(前300字): {"intent": "ask_lore", "action": "chat", "line": "玄京与雪州向来隔着风雪与旧怨。"}
+2026-05-20 22:47:20,413 INFO [agent.npc_graph_agent] [decide_action] llm_service=<test_npc_graph_agent.SequenceFakeLlm object at 0x0000011FED06C8A0>, type=SequenceFakeLlm
+2026-05-20 22:47:20,414 INFO [agent.npc_graph_agent] [decide_action] LLM 耗时 0.00s, 返回(前300字): {"intent": "ask_lore", "action": "chat", "line": "这事我不敢乱说。"}
+2026-05-20 22:47:20,417 INFO [agent.npc_graph_agent] [decide_action] llm_service=<test_npc_graph_agent.FakeLlm object at 0x0000011FEE49C770>, type=FakeLlm
+2026-05-20 22:47:20,418 INFO [agent.npc_graph_agent] [decide_action] LLM 耗时 0.00s, 返回(前300字): {"intent": "chat", "action": "chat", "line": "好的。", "emotion": "pleased"}
+2026-05-20 22:47:20,458 INFO [agent.npc_graph_agent] [decide_action] llm_service=<test_npc_graph_agent.FakeLlm object at 0x0000011FEE49C8A0>, type=FakeLlm
+2026-05-20 22:47:20,459 INFO [agent.npc_graph_agent] [decide_action] LLM 耗时 0.00s, 返回(前300字): {"intent":"greet","action":"chat","emotion":"pleased","line":"你好。"}
+2026-05-20 22:47:20,463 INFO [agent.npc_graph_agent] [decide_action] llm_service=<test_npc_graph_agent.SequenceFakeLlm object at 0x0000011FEE49CB00>, type=SequenceFakeLlm
+2026-05-20 22:47:20,463 INFO [agent.npc_graph_agent] [decide_action] LLM 耗时 0.00s, 返回(前300字): {"intent": "chat", "action": "chat", "line": "我记住了。", "emotion": "pleased"}
+2026-05-20 22:47:20,464 INFO [agent.npc_graph_agent] [update_player_profile] async result={'ok': True, 'tool_name': 'update_player_profile'}
+2026-05-20 22:47:20,476 INFO [agent.npc_graph_agent] [decide_action] llm_service=<test_npc_graph_agent.FakeLlm object at 0x0000011FEE5D1D00>, type=FakeLlm
+2026-05-20 22:47:20,476 INFO [agent.npc_graph_agent] [decide_action] LLM 耗时 0.00s, 返回(前300字): {"taste_preferences": {"likes_latte": true}}
+2026-05-20 22:47:20,480 INFO [agent.npc_graph_agent] [decide_action] llm_service=None, type=None
+2026-05-20 22:59:40,332 INFO [api.main] [_create_llm_if_enabled] LLM 创建成功: FakeLlm
+2026-05-20 22:59:40,347 WARNING [api.main] [_create_llm_if_enabled] ENABLE_LLM=false，LLM 已禁用
+2026-05-20 22:59:43,124 INFO [agent.director_agent] [DirectorAgent] llm=FakeLlm
+2026-05-20 22:59:43,126 INFO [agent.director_agent] [DirectorAgent] llm=None
+2026-05-20 22:59:43,128 INFO [agent.director_agent] [DirectorAgent] llm=FakeLlm
+2026-05-20 22:59:43,163 INFO [agent.npc_graph_agent] [decide_action] llm_service=<test_npc_graph_agent.FakeLlm object at 0x000001B9DFD16A50>, type=FakeLlm
+2026-05-20 22:59:43,164 INFO [agent.npc_graph_agent] [decide_action] LLM 耗时 0.00s, 返回(前300字): {"intent": "greet", "action": "chat", "line": "你好呀"}
+2026-05-20 22:59:43,166 INFO [agent.npc_graph_agent] [decide_action] llm_service=<test_npc_graph_agent.SequenceFakeLlm object at 0x000001B9DFD16F90>, type=SequenceFakeLlm
+2026-05-20 22:59:43,166 INFO [agent.npc_graph_agent] [decide_action] LLM 耗时 0.00s, 返回(前300字): {"intent": "ask_lore", "action": "chat", "line": "雪州很冷。"}
+2026-05-20 22:59:43,168 ERROR [agent.npc_graph_agent] [plan_game_setting_retrieval] LLM 调用异常
+Traceback (most recent call last):
+  File "C:\Users\59493\Desktop\GameNpcFrame\agent\npc_graph_agent.py", line 575, in plan_game_setting_retrieval
+    response, _ = llm_service.chat(
+                  ~~~~~~~~~~~~~~~~^
+        prompt=prompt,
+        ^^^^^^^^^^^^^^
+        history=[],
+        ^^^^^^^^^^^
+        system_prompt=GAME_SETTING_RETRIEVAL_SYSTEM_PROMPT,
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "C:\Users\59493\Desktop\GameNpcFrame\tests\test_npc_graph_agent.py", line 215, in chat
+    raise RuntimeError("模型调用失败")
+RuntimeError: 模型调用失败
+2026-05-20 22:59:43,169 INFO [agent.npc_graph_agent] [decide_action] llm_service=<test_npc_graph_agent.FailingLlm object at 0x000001B9DFD174D0>, type=FailingLlm
+2026-05-20 22:59:43,169 ERROR [agent.npc_graph_agent] [decide_action] LLM 调用异常
+Traceback (most recent call last):
+  File "C:\Users\59493\Desktop\GameNpcFrame\agent\npc_graph_agent.py", line 650, in decide_action
+    response, _ = llm_service.chat(
+                  ~~~~~~~~~~~~~~~~^
+        prompt=prompt,
+        ^^^^^^^^^^^^^^
+        history=[],
+        ^^^^^^^^^^^
+        system_prompt=DECISION_SYSTEM_PROMPT,
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "C:\Users\59493\Desktop\GameNpcFrame\tests\test_npc_graph_agent.py", line 215, in chat
+    raise RuntimeError("模型调用失败")
+RuntimeError: 模型调用失败
+2026-05-20 22:59:43,172 INFO [agent.npc_graph_agent] [decide_action] llm_service=<test_npc_graph_agent.FakeLlm object at 0x000001B9DFEE8190>, type=FakeLlm
+2026-05-20 22:59:43,172 INFO [agent.npc_graph_agent] [decide_action] LLM 耗时 0.00s, 返回(前300字): {"intent": "greet", "action": "chat", "line": "已经有台词"}
+2026-05-20 22:59:43,173 INFO [agent.npc_graph_agent] [decide_action] llm_service=None, type=None
+2026-05-20 22:59:43,175 INFO [agent.npc_graph_agent] [decide_action] llm_service=<test_npc_graph_agent.SequenceFakeLlm object at 0x000001B9DFEE8CD0>, type=SequenceFakeLlm
+2026-05-20 22:59:43,175 INFO [agent.npc_graph_agent] [decide_action] LLM 耗时 0.00s, 返回(前300字): {"intent": "greet", "action": "chat", "line": "早，风雪还没停。"}
+2026-05-20 22:59:43,177 INFO [agent.npc_graph_agent] [decide_action] llm_service=<test_npc_graph_agent.SequenceFakeLlm object at 0x000001B9DFEE91D0>, type=SequenceFakeLlm
+2026-05-20 22:59:43,177 INFO [agent.npc_graph_agent] [decide_action] LLM 耗时 0.00s, 返回(前300字): {"intent": "ask_lore", "action": "chat", "line": "玄京与雪州向来隔着风雪与旧怨。"}
+2026-05-20 22:59:43,179 INFO [agent.npc_graph_agent] [decide_action] llm_service=<test_npc_graph_agent.SequenceFakeLlm object at 0x000001B9DFD10FC0>, type=SequenceFakeLlm
+2026-05-20 22:59:43,179 INFO [agent.npc_graph_agent] [decide_action] LLM 耗时 0.00s, 返回(前300字): {"intent": "ask_lore", "action": "chat", "line": "这事我不敢乱说。"}
+2026-05-20 22:59:43,181 INFO [agent.npc_graph_agent] [decide_action] llm_service=None, type=None
+2026-05-20 22:59:43,183 INFO [agent.npc_graph_agent] [decide_action] llm_service=<test_npc_graph_agent.SequenceFakeLlm object at 0x000001B9DFD11220>, type=SequenceFakeLlm
+2026-05-20 22:59:43,183 INFO [agent.npc_graph_agent] [decide_action] LLM 耗时 0.00s, 返回(前300字): {"intent": "ask_lore", "action": "chat", "line": "我先确认陆青崖的安排。"}
+2026-05-20 22:59:43,185 INFO [agent.npc_graph_agent] [decide_action] llm_service=<test_npc_graph_agent.SequenceFakeLlm object at 0x000001B9DFD1EE70>, type=SequenceFakeLlm
+2026-05-20 22:59:43,185 INFO [agent.npc_graph_agent] [decide_action] LLM 耗时 0.00s, 返回(前300字): {"intent": "ask_lore", "action": "chat", "line": "我不确定。"}
+2026-05-20 22:59:43,187 INFO [agent.npc_graph_agent] [decide_action] llm_service=<test_npc_graph_agent.FakeLlm object at 0x000001B9DFD116E0>, type=FakeLlm
+2026-05-20 22:59:43,187 INFO [agent.npc_graph_agent] [decide_action] LLM 耗时 0.00s, 返回(前300字): {"intent": "chat", "action": "chat", "line": "好的。", "emotion": "pleased"}
+2026-05-20 22:59:43,189 INFO [agent.npc_graph_agent] [decide_action] llm_service=<test_npc_graph_agent.FakeLlm object at 0x000001B9DFD11810>, type=FakeLlm
+2026-05-20 22:59:43,189 INFO [agent.npc_graph_agent] [decide_action] LLM 耗时 0.00s, 返回(前300字): {"intent":"greet","action":"chat","emotion":"pleased","line":"你好。"}
+2026-05-20 22:59:43,191 INFO [agent.npc_graph_agent] [decide_action] llm_service=<test_npc_graph_agent.SequenceFakeLlm object at 0x000001B9DFEF97B0>, type=SequenceFakeLlm
+2026-05-20 22:59:43,191 INFO [agent.npc_graph_agent] [decide_action] LLM 耗时 0.00s, 返回(前300字): {"intent": "chat", "action": "chat", "line": "我记住了。", "emotion": "pleased"}
+2026-05-20 22:59:43,191 INFO [agent.npc_graph_agent] [update_player_profile] async result={'ok': True, 'tool_name': 'update_player_profile'}
+2026-05-20 22:59:43,197 INFO [agent.npc_graph_agent] [decide_action] llm_service=<test_npc_graph_agent.FakeLlm object at 0x000001B9DFFC1040>, type=FakeLlm
+2026-05-20 22:59:43,197 INFO [agent.npc_graph_agent] [decide_action] LLM 耗时 0.00s, 返回(前300字): {"taste_preferences": {"likes_latte": true}}
+2026-05-20 22:59:43,199 INFO [agent.npc_graph_agent] [decide_action] llm_service=None, type=None
+2026-05-20 23:09:56,509 INFO [api.main] [_create_llm_if_enabled] LLM 创建成功: FakeLlm
+2026-05-20 23:09:56,523 WARNING [api.main] [_create_llm_if_enabled] ENABLE_LLM=false，LLM 已禁用
+2026-05-20 23:09:59,338 INFO [agent.director_agent] [DirectorAgent] llm=FakeLlm
+2026-05-20 23:09:59,339 INFO [agent.director_agent] [DirectorAgent] llm=None
+2026-05-20 23:09:59,341 INFO [agent.director_agent] [DirectorAgent] llm=FakeLlm
+2026-05-20 23:09:59,354 INFO [agent.npc_graph_agent] [decide_action] llm_service=<test_npc_graph_agent.FakeLlm object at 0x0000029F8615A900>, type=FakeLlm
+2026-05-20 23:09:59,355 INFO [agent.npc_graph_agent] [decide_action] LLM 耗时 0.00s, 返回(前300字): {"intent": "greet", "action": "chat", "line": "你好呀"}
+2026-05-20 23:09:59,356 INFO [agent.npc_graph_agent] [decide_action] llm_service=<test_npc_graph_agent.SequenceFakeLlm object at 0x0000029F8615AE40>, type=SequenceFakeLlm
+2026-05-20 23:09:59,356 INFO [agent.npc_graph_agent] [decide_action] LLM 耗时 0.00s, 返回(前300字): {"intent": "ask_lore", "action": "chat", "line": "雪州很冷。"}
+2026-05-20 23:09:59,358 ERROR [agent.npc_graph_agent] [plan_game_setting_retrieval] LLM 调用异常
+Traceback (most recent call last):
+  File "C:\Users\59493\Desktop\GameNpcFrame\agent\npc_graph_agent.py", line 594, in plan_game_setting_retrieval
+    response, _ = llm_service.chat(
+                  ~~~~~~~~~~~~~~~~^
+        prompt=prompt,
+        ^^^^^^^^^^^^^^
+        history=[],
+        ^^^^^^^^^^^
+        system_prompt=GAME_SETTING_RETRIEVAL_SYSTEM_PROMPT,
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "C:\Users\59493\Desktop\GameNpcFrame\tests\test_npc_graph_agent.py", line 221, in chat
+    raise RuntimeError("模型调用失败")
+RuntimeError: 模型调用失败
+2026-05-20 23:09:59,359 INFO [agent.npc_graph_agent] [decide_action] llm_service=<test_npc_graph_agent.FailingLlm object at 0x0000029F8615B380>, type=FailingLlm
+2026-05-20 23:09:59,359 ERROR [agent.npc_graph_agent] [decide_action] LLM 调用异常
+Traceback (most recent call last):
+  File "C:\Users\59493\Desktop\GameNpcFrame\agent\npc_graph_agent.py", line 669, in decide_action
+    response, _ = llm_service.chat(
+                  ~~~~~~~~~~~~~~~~^
+        prompt=prompt,
+        ^^^^^^^^^^^^^^
+        history=[],
+        ^^^^^^^^^^^
+        system_prompt=DECISION_SYSTEM_PROMPT,
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "C:\Users\59493\Desktop\GameNpcFrame\tests\test_npc_graph_agent.py", line 221, in chat
+    raise RuntimeError("模型调用失败")
+RuntimeError: 模型调用失败
+2026-05-20 23:09:59,362 INFO [agent.npc_graph_agent] [decide_action] llm_service=<test_npc_graph_agent.FakeLlm object at 0x0000029F86334050>, type=FakeLlm
+2026-05-20 23:09:59,362 INFO [agent.npc_graph_agent] [decide_action] LLM 耗时 0.00s, 返回(前300字): {"intent": "greet", "action": "chat", "line": "已经有台词"}
+2026-05-20 23:09:59,363 INFO [agent.npc_graph_agent] [decide_action] llm_service=None, type=None
+2026-05-20 23:09:59,365 INFO [agent.npc_graph_agent] [decide_action] llm_service=<test_npc_graph_agent.SequenceFakeLlm object at 0x0000029F86334B90>, type=SequenceFakeLlm
+2026-05-20 23:09:59,365 INFO [agent.npc_graph_agent] [decide_action] LLM 耗时 0.00s, 返回(前300字): {"intent": "greet", "action": "chat", "line": "早，风雪还没停。"}
+2026-05-20 23:09:59,367 INFO [agent.npc_graph_agent] [decide_action] llm_service=<test_npc_graph_agent.SequenceFakeLlm object at 0x0000029F86335090>, type=SequenceFakeLlm
+2026-05-20 23:09:59,367 INFO [agent.npc_graph_agent] [decide_action] LLM 耗时 0.00s, 返回(前300字): {"intent": "ask_lore", "action": "chat", "line": "玄京与雪州向来隔着风雪与旧怨。"}
+2026-05-20 23:09:59,369 INFO [agent.npc_graph_agent] [decide_action] llm_service=<test_npc_graph_agent.SequenceFakeLlm object at 0x0000029F85FE36F0>, type=SequenceFakeLlm
+2026-05-20 23:09:59,369 INFO [agent.npc_graph_agent] [decide_action] LLM 耗时 0.00s, 返回(前300字): {"intent": "ask_lore", "action": "chat", "line": "这事我不敢乱说。"}
+2026-05-20 23:09:59,371 INFO [agent.npc_graph_agent] [decide_action] llm_service=None, type=None
+2026-05-20 23:09:59,373 INFO [agent.npc_graph_agent] [decide_action] llm_service=<test_npc_graph_agent.SequenceFakeLlm object at 0x0000029F85FE3BB0>, type=SequenceFakeLlm
+2026-05-20 23:09:59,373 INFO [agent.npc_graph_agent] [decide_action] LLM 耗时 0.00s, 返回(前300字): {"intent": "ask_lore", "action": "chat", "line": "我先确认陆青崖的安排。"}
+2026-05-20 23:09:59,374 INFO [agent.npc_graph_agent] [decide_action] llm_service=<test_npc_graph_agent.SequenceFakeLlm object at 0x0000029F8618CCB0>, type=SequenceFakeLlm
+2026-05-20 23:09:59,375 INFO [agent.npc_graph_agent] [decide_action] LLM 耗时 0.00s, 返回(前300字): {"intent": "ask_lore", "action": "chat", "line": "我不确定。"}
+2026-05-20 23:09:59,376 INFO [agent.npc_graph_agent] [decide_action] llm_service=<test_npc_graph_agent.SequenceFakeLlm object at 0x0000029F8633D6A0>, type=SequenceFakeLlm
+2026-05-20 23:09:59,376 INFO [agent.npc_graph_agent] [decide_action] LLM 耗时 0.00s, 返回(前300字): {"intent": "chat", "action": "chat", "line": "我知道了。"}
+2026-05-20 23:09:59,378 INFO [agent.npc_graph_agent] [update_player_profile] async result={'ok': True, 'tool_name': 'update_player_profile'}
+2026-05-20 23:09:59,380 INFO [agent.npc_graph_agent] [decide_action] llm_service=<test_npc_graph_agent.FakeLlm object at 0x0000029F863ACC30>, type=FakeLlm
+2026-05-20 23:09:59,380 INFO [agent.npc_graph_agent] [decide_action] LLM 耗时 0.00s, 返回(前300字): {"intent": "chat", "action": "chat", "line": "好的。", "emotion": "pleased"}
+2026-05-20 23:09:59,381 INFO [agent.npc_graph_agent] [decide_action] llm_service=<test_npc_graph_agent.FakeLlm object at 0x0000029F8618D370>, type=FakeLlm
+2026-05-20 23:09:59,382 INFO [agent.npc_graph_agent] [decide_action] LLM 耗时 0.00s, 返回(前300字): {"intent":"greet","action":"chat","emotion":"pleased","line":"你好。"}
+2026-05-20 23:09:59,383 INFO [agent.npc_graph_agent] [decide_action] llm_service=<test_npc_graph_agent.SequenceFakeLlm object at 0x0000029F86182F10>, type=SequenceFakeLlm
+2026-05-20 23:09:59,383 INFO [agent.npc_graph_agent] [decide_action] LLM 耗时 0.00s, 返回(前300字): {"intent": "chat", "action": "chat", "line": "我记住了。", "emotion": "pleased"}
+2026-05-20 23:09:59,384 INFO [agent.npc_graph_agent] [update_player_profile] async result={'ok': True, 'tool_name': 'update_player_profile'}
+2026-05-20 23:09:59,399 INFO [agent.npc_graph_agent] [decide_action] llm_service=<test_npc_graph_agent.FakeLlm object at 0x0000029F86410C00>, type=FakeLlm
+2026-05-20 23:09:59,399 INFO [agent.npc_graph_agent] [decide_action] LLM 耗时 0.00s, 返回(前300字): {"taste_preferences": {"likes_latte": true}}
+2026-05-20 23:09:59,401 INFO [agent.npc_graph_agent] [decide_action] llm_service=None, type=None
+2026-05-20 23:20:24,863 INFO [api.main] [_create_llm_if_enabled] LLM 创建成功: FakeLlm
+2026-05-20 23:20:24,878 WARNING [api.main] [_create_llm_if_enabled] ENABLE_LLM=false，LLM 已禁用
+2026-05-20 23:20:27,205 INFO [agent.director_agent] [DirectorAgent] llm=FakeLlm
+2026-05-20 23:20:27,207 INFO [agent.director_agent] [DirectorAgent] llm=None
+2026-05-20 23:20:27,209 INFO [agent.director_agent] [DirectorAgent] llm=FakeLlm
+2026-05-20 23:20:27,211 INFO [agent.director_agent] [DirectorAgent] llm=FakeLlm
+2026-05-20 23:20:27,212 INFO [agent.director_agent] [DirectorAgent] llm=FakeLlm
+2026-05-20 23:20:27,214 INFO [agent.director_agent] [DirectorAgent] llm=FakeLlm
+2026-05-20 23:20:27,228 INFO [agent.npc_graph_agent] [decide_action] llm_service=<test_npc_graph_agent.FakeLlm object at 0x000002139323D2B0>, type=FakeLlm
+2026-05-20 23:20:27,228 INFO [agent.npc_graph_agent] [decide_action] LLM 耗时 0.00s, 返回(前300字): {"intent": "greet", "action": "chat", "line": "你好呀"}
+2026-05-20 23:20:27,229 INFO [agent.npc_graph_agent] [decide_action] llm_service=<test_npc_graph_agent.SequenceFakeLlm object at 0x000002139323D940>, type=SequenceFakeLlm
+2026-05-20 23:20:27,229 INFO [agent.npc_graph_agent] [decide_action] LLM 耗时 0.00s, 返回(前300字): {"intent": "ask_lore", "action": "chat", "line": "雪州很冷。"}
+2026-05-20 23:20:27,231 ERROR [agent.npc_graph_agent] [plan_game_setting_retrieval] LLM 调用异常
+Traceback (most recent call last):
+  File "C:\Users\59493\Desktop\GameNpcFrame\agent\npc_graph_agent.py", line 601, in plan_game_setting_retrieval
+    response, _ = llm_service.chat(
+                  ~~~~~~~~~~~~~~~~^
+        prompt=prompt,
+        ^^^^^^^^^^^^^^
+        history=[],
+        ^^^^^^^^^^^
+        system_prompt=GAME_SETTING_RETRIEVAL_SYSTEM_PROMPT,
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "C:\Users\59493\Desktop\GameNpcFrame\tests\test_npc_graph_agent.py", line 221, in chat
+    raise RuntimeError("模型调用失败")
+RuntimeError: 模型调用失败
+2026-05-20 23:20:27,232 INFO [agent.npc_graph_agent] [decide_action] llm_service=<test_npc_graph_agent.FailingLlm object at 0x000002139323DFD0>, type=FailingLlm
+2026-05-20 23:20:27,233 ERROR [agent.npc_graph_agent] [decide_action] LLM 调用异常
+Traceback (most recent call last):
+  File "C:\Users\59493\Desktop\GameNpcFrame\agent\npc_graph_agent.py", line 676, in decide_action
+    response, _ = llm_service.chat(
+                  ~~~~~~~~~~~~~~~~^
+        prompt=prompt,
+        ^^^^^^^^^^^^^^
+        history=[],
+        ^^^^^^^^^^^
+        system_prompt=DECISION_SYSTEM_PROMPT,
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "C:\Users\59493\Desktop\GameNpcFrame\tests\test_npc_graph_agent.py", line 221, in chat
+    raise RuntimeError("模型调用失败")
+RuntimeError: 模型调用失败
+2026-05-20 23:20:27,234 INFO [agent.npc_graph_agent] [decide_action] llm_service=<test_npc_graph_agent.FakeLlm object at 0x00000213931F2FD0>, type=FakeLlm
+2026-05-20 23:20:27,235 INFO [agent.npc_graph_agent] [decide_action] LLM 耗时 0.00s, 返回(前300字): {"intent": "greet", "action": "chat", "line": "已经有台词"}
+2026-05-20 23:20:27,236 INFO [agent.npc_graph_agent] [decide_action] llm_service=None, type=None
+2026-05-20 23:20:27,238 INFO [agent.npc_graph_agent] [decide_action] llm_service=<test_npc_graph_agent.SequenceFakeLlm object at 0x00000213931F3B10>, type=SequenceFakeLlm
+2026-05-20 23:20:27,238 INFO [agent.npc_graph_agent] [decide_action] LLM 耗时 0.00s, 返回(前300字): {"intent": "greet", "action": "chat", "line": "早，风雪还没停。"}
+2026-05-20 23:20:27,240 INFO [agent.npc_graph_agent] [decide_action] llm_service=<test_npc_graph_agent.SequenceFakeLlm object at 0x00000213931F3ED0>, type=SequenceFakeLlm
+2026-05-20 23:20:27,240 INFO [agent.npc_graph_agent] [decide_action] LLM 耗时 0.00s, 返回(前300字): {"intent": "ask_lore", "action": "chat", "line": "玄京与雪州向来隔着风雪与旧怨。"}
+2026-05-20 23:20:27,242 INFO [agent.npc_graph_agent] [decide_action] llm_service=<test_npc_graph_agent.SequenceFakeLlm object at 0x0000021393304FC0>, type=SequenceFakeLlm
+2026-05-20 23:20:27,242 INFO [agent.npc_graph_agent] [decide_action] LLM 耗时 0.00s, 返回(前300字): {"intent": "ask_lore", "action": "chat", "line": "这事我不敢乱说。"}
+2026-05-20 23:20:27,243 INFO [agent.npc_graph_agent] [decide_action] llm_service=None, type=None
+2026-05-20 23:20:27,245 INFO [agent.npc_graph_agent] [decide_action] llm_service=<test_npc_graph_agent.SequenceFakeLlm object at 0x0000021393305480>, type=SequenceFakeLlm
+2026-05-20 23:20:27,245 INFO [agent.npc_graph_agent] [decide_action] LLM 耗时 0.00s, 返回(前300字): {"intent": "ask_lore", "action": "chat", "line": "我先确认陆青崖的安排。"}
+2026-05-20 23:20:27,247 INFO [agent.npc_graph_agent] [decide_action] llm_service=<test_npc_graph_agent.SequenceFakeLlm object at 0x00000213931A1490>, type=SequenceFakeLlm
+2026-05-20 23:20:27,247 INFO [agent.npc_graph_agent] [decide_action] LLM 耗时 0.00s, 返回(前300字): {"intent": "ask_lore", "action": "chat", "line": "我不确定。"}
+2026-05-20 23:20:27,248 INFO [agent.npc_graph_agent] [decide_action] llm_service=<test_npc_graph_agent.SequenceFakeLlm object at 0x0000021393309E10>, type=SequenceFakeLlm
+2026-05-20 23:20:27,248 INFO [agent.npc_graph_agent] [decide_action] LLM 耗时 0.00s, 返回(前300字): {"intent": "chat", "action": "chat", "line": "我知道了。"}
+2026-05-20 23:20:27,250 INFO [agent.npc_graph_agent] [update_player_profile] async result={'ok': True, 'tool_name': 'update_player_profile'}
+2026-05-20 23:20:27,252 INFO [agent.npc_graph_agent] [decide_action] llm_service=<test_npc_graph_agent.FakeLlm object at 0x00000213933063F0>, type=FakeLlm
+2026-05-20 23:20:27,252 INFO [agent.npc_graph_agent] [decide_action] LLM 耗时 0.00s, 返回(前300字): {"intent": "chat", "action": "chat", "line": "好的。", "emotion": "pleased"}
+2026-05-20 23:20:27,254 INFO [agent.npc_graph_agent] [decide_action] llm_service=<test_npc_graph_agent.FakeLlm object at 0x00000213931A16D0>, type=FakeLlm
+2026-05-20 23:20:27,254 INFO [agent.npc_graph_agent] [decide_action] LLM 耗时 0.00s, 返回(前300字): {"intent":"greet","action":"chat","emotion":"pleased","line":"你好。"}
+2026-05-20 23:20:27,255 INFO [agent.npc_graph_agent] [decide_action] llm_service=<test_npc_graph_agent.SequenceFakeLlm object at 0x000002139318D6A0>, type=SequenceFakeLlm
+2026-05-20 23:20:27,256 INFO [agent.npc_graph_agent] [decide_action] LLM 耗时 0.00s, 返回(前300字): {"intent": "chat", "action": "chat", "line": "我记住了。", "emotion": "pleased"}
+2026-05-20 23:20:27,256 INFO [agent.npc_graph_agent] [update_player_profile] async result={'ok': True, 'tool_name': 'update_player_profile'}
+2026-05-20 23:20:27,271 INFO [agent.npc_graph_agent] [decide_action] llm_service=<test_npc_graph_agent.FakeLlm object at 0x00000213933D9370>, type=FakeLlm
+2026-05-20 23:20:27,271 INFO [agent.npc_graph_agent] [decide_action] LLM 耗时 0.00s, 返回(前300字): {"taste_preferences": {"likes_latte": true}}
+2026-05-20 23:20:27,273 INFO [agent.npc_graph_agent] [decide_action] llm_service=None, type=None

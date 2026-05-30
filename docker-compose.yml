@@ -7,7 +7,7 @@ services:
         restart: unless-stopped
         environment:
             # 配置数据库账号、密码和默认数据库
-            POSTGRES_DB: coffee_npc_agent
+            POSTGRES_DB: game_npc_frame
             POSTGRES_USER: postgres
             POSTGRES_PASSWORD: root123456
         ports:

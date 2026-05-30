@@ -10,9 +10,9 @@ PostgreSQL + pgvector 持久化，以及 Docker Compose 一键启动。
 ## 核心能力
 
 - 通用 NPC 对话：支持玩家、会话、NPC、关系、短期记忆、长期记忆和对话历史。
-- 游戏设定 RAG：上传 PDF 后按章节切分设定文本，并在 NPC 对话时混合检索注入。
+- 游戏设定 RAG：上传 PDF 后按章节切分设定文本，由 ReAct 节点按需检索注入。
 - NPC 设定导入：上传 NPC PDF 后识别结构化字段，并通过 ORM 写入数据库。
-- 记忆系统：短期记忆保存最近交互，溢出后摘要为长期记忆并支持混合检索。
+- 记忆系统：短期记忆保存最近交互，溢出后后台摘要为长期记忆并更新画像。
 - NPC 管理：支持查询 NPC、选择 NPC 对话、删除 NPC。
 - Docker 部署：编排后端服务和带 pgvector 扩展的 PostgreSQL 数据库。
 
@@ -83,24 +83,35 @@ API 入口位于 `api/main.py`，使用 FastAPI 提供统一的 `ApiResponse` �
 - 删除 NPC 通过 `NpcService.delete_npc` 调用 ORM 层，不手写原始 SQL。
 - 旧 coffee/cafe/world-state 公开接口已移除；调试工具列表也过滤旧工具名。
 
-### 2. Agent 对话图
+### 2. Director 与 Agent 对话图
+
+对话入口由 `agent/director_agent.py` 管理。Director 负责会话调度、选择 NPC、复用
+`NpcGraphAgent`，并在 NPC 首次回复后调用 Director LLM 判断是否需要追加一次下一步动作。
+下一步动作只会判断一次；同一 `session_id + npc_id` 会使用锁避免并发重复触发。
 
 NPC 对话由 `agent/npc_graph_agent.py` 中的 LangGraph 状态图驱动。每次玩家发送消息时，
 `NpcGraphAgent.handle_message` 会构造 `NpcGraphState`，再交给图执行。
 
 图节点顺序：
 
-1. `load_context`：读取 NPC 状态、玩家画像、关系和世界状态。
-2. `retrieve_memories`：读取短期记忆、长期记忆，并检索游戏设定 RAG 上下文。
-3. `decide_action`：调用 LLM 生成结构化决策；未启用 LLM 时走规则回复。
-4. `normalize_decision`：清洗 LLM 输出，限制 action、emotion、关系变化字段。
-5. `validate_action`：检查动作是否合法，不合法时降级为普通聊天。
-6. `build_recommendation_context`：仅在特定动作下读取推荐上下文。
-7. `generate_line`：生成最终 NPC 台词。
-8. `decide_next_action`：判断是否需要延迟触发后续动作。
-9. `apply_state_change`：写入关系变化、NPC 情绪和位置变化。
-10. `update_player_profile`：从玩家输入中提取少量画像更新。
-11. `write_memory`：写入对话历史和短期记忆。
+1. `load_context`：读取当前 NPC、玩家画像、玩家与当前 NPC 关系、NPC 目录、
+   玩家与全部 NPC 关系和世界状态。
+2. `retrieve_memories`：固定读取短期记忆和长期记忆，不直接检索游戏设定。
+3. `plan_game_setting_retrieval`：由 LLM 判断是否需要游戏设定 RAG，并输出工具调用 JSON。
+4. `retrieve_game_setting`：仅当上一步需要检索时调用 `get_game_setting_context`。
+5. `decide_action`：调用 LLM 生成结构化决策；未启用 LLM 时走规则回复。
+6. `validate_action`：检查动作是否合法，不合法时降级为普通聊天。
+7. `generate_line`：生成或复用最终 NPC 台词。
+8. `apply_state_change`：写入关系变化、NPC 情绪和位置变化。
+9. `update_player_profile`：保留图节点位置；画像更新实际在记忆归档后台任务中完成。
+10. `write_memory`：写入对话历史和短期记忆；Director 模式下会被提交到后台执行。
+
+Director 下一步动作判断：
+
+- 输入只使用本轮玩家消息和 NPC 首次回复两条近期消息。
+- LLM 输出 `need_next_action=false` 时，本轮流程结束。
+- LLM 输出 `need_next_action=true` 时，只追加一次 `line` 到本轮 `reply`。
+- 下一步动作判断与记忆写入、长期记忆归档、画像更新并发执行。
 
 结构化决策约束：
 
@@ -108,6 +119,9 @@ NPC 对话由 `agent/npc_graph_agent.py` 中的 LangGraph 状态图驱动。每�
 - `emotion` 必须在固定枚举内，例如 `neutral`、`calm`、`curious`。
 - `relationship_delta` 只允许 `trust`、`familiarity`、`fondness`、`dislike`、`stress`。
 - 每个关系变化值会被限制在安全范围内，避免模型输出污染数据库。
+- 涉及游戏设定或 NPC 设定的事实，只能依据 NPC 目录、玩家关系、RAG 上下文和记忆。
+- LLM 上下文会递归移除 `id`、`created_at`、`updated_at`、`create_time`、`update_time`
+  等数据库元字段，减少无用 token。
 
 ### 3. 短期记忆实现
 
@@ -122,8 +136,8 @@ NPC 对话由 `agent/npc_graph_agent.py` 中的 LangGraph 状态图驱动。每�
 
 窗口策略：
 
-- `SHORT_TERM_LIMIT = 20`
-- `ARCHIVE_BATCH_SIZE = 10`
+- `SHORT_TERM_LIMIT = 10`
+- `ARCHIVE_BATCH_SIZE = 5`
 
 写入流程：
 
@@ -133,13 +147,14 @@ NPC 对话由 `agent/npc_graph_agent.py` 中的 LangGraph 状态图驱动。每�
 4. 如果不存在，则创建一条新记录。
 5. 将新消息追加到 `messages` 数组。
 6. 更新 `message_count` 和 `last_message_at`。
-7. 如果消息数超过 20，返回 `needs_archive = true` 和最早 10 条消息。
+7. 如果消息数超过 10，返回 `needs_archive = true` 和最早 5 条消息。
 
 归档触发：
 
-- `npc_graph_agent.write_memory` 会在后台线程写入短期记忆。
-- 写入后调用 `_archive_short_memory_if_needed` 检查是否溢出。
-- 如果需要归档，则调用长期记忆服务生成长期记忆。
+- 普通图执行会同步写入对话历史和短期记忆。
+- Director 模式下，`write_memory` 会被提交到后台执行器，不阻塞 NPC 回复返回。
+- 写入短期记忆后调用 `_schedule_archive_short_memory_if_needed` 检查是否溢出。
+- 如果需要归档，则后台并发生成长期记忆，并用同一批近期对话提取玩家画像更新。
 - 长期记忆写入成功后，调用 `trim_short_term_memory` 移除已归档消息。
 
 这样短期记忆始终保留最近互动，同时较早互动会被压缩进入长期记忆。
@@ -164,7 +179,7 @@ NPC 对话由 `agent/npc_graph_agent.py` 中的 LangGraph 状态图驱动。每�
 
 从短期记忆生成长期记忆：
 
-1. 短期记忆窗口超过 20 条后，取最早 10 条消息。
+1. 短期记忆窗口超过 10 条后，取最早 5 条消息。
 2. `create_long_term_memory_from_messages` 调用 `summarize_messages`。
 3. 如果传入了 LLM，则要求模型输出 JSON 摘要。
 4. 如果 LLM 不可用或输出异常，则使用 `_rule_based_summary` 规则摘要。
@@ -334,18 +349,41 @@ postgresql_ops = vector_cosine_ops
 
 #### 7.6 对话注入
 
-NPC 对话图中的 `retrieve_memories` 节点会调用工具：
+NPC 对话图不再每轮无条件检索游戏设定。流程拆为 ReAct 风格节点：
 
 ```text
-get_game_setting_context
+plan_game_setting_retrieval -> retrieve_game_setting -> decide_action
 ```
 
-调用参数：
+`plan_game_setting_retrieval` 会先判断是否需要检索：
 
-- `query`：当前玩家消息。
-- `limit`：默认取 5 个片段。
+- 普通寒暄、承接上下文、当前关系或记忆可以回答的问题，直接进入 `decide_action`。
+- 涉及世界观、地点、势力、历史、人物背景、规则、专有名词或 NPC 设定的问题，
+  由模型生成 `get_game_setting_context` 工具调用 JSON。
+
+允许的工具调用：
+
+```json
+{
+  "need_retrieval": true,
+  "tool_call": {
+    "tool_name": "get_game_setting_context",
+    "arguments": {
+      "query": "玄京 雪州 关系",
+      "limit": 5
+    }
+  },
+  "reason": "玩家询问世界设定事实"
+}
+```
+
+检索参数：
+
+- `query`：由模型根据玩家问题和上下文编写，不直接等同于当前玩家消息。
+- `limit`：默认取 5 个片段，程序会限制在安全范围内。
 
 返回的 `game_setting_context` 会进入 `decide_action` 的结构化 Prompt，供 NPC 决策和台词生成使用。
+非法工具名、空 query 或格式错误会被拒绝，并降级为不检索。
 
 ### 8. NPC 设定导入实现
 

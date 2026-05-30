@@ -11,16 +11,18 @@
 
 from __future__ import annotations
 
+import json
+import logging
+import os
+import sys
+from collections import defaultdict
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional, Protocol, Tuple
+from threading import Lock
+from typing import Any, Dict, List, Optional
 from uuid import uuid4
 
-import sys
-import os
-
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
-
-import logging
 
 from agent.llm_service import LlmService
 
@@ -28,6 +30,28 @@ _log = logging.getLogger(__name__)
 
 
 DEFAULT_LLM_ARGUMENT = object()
+DEFAULT_DIRECTOR_BACKGROUND_EXECUTOR = ThreadPoolExecutor(
+    max_workers=4,
+    thread_name_prefix="director_background",
+)
+
+NEXT_ACTION_SYSTEM_PROMPT = """
+你是 GameNpcFrame 的 Director Agent。
+
+你的任务是根据玩家消息和 NPC 刚刚回复的两条近期消息，判断 NPC 是否需要追加一次下一步动作。
+
+规则：
+1. 只输出一个 JSON object，不要 Markdown，不要解释。
+2. need_next_action 为 true 时，必须给出 line，表示 NPC 接着回复玩家的一句补充话。
+3. 下一步动作只能触发一次，不能要求继续递归判断。
+4. 如果 NPC 回复已经完整、玩家没有等待补充、没有强动作动机，则 need_next_action=false。
+5. 不要编造游戏设定、NPC 设定、任务、地点和人物关系；没有依据时不要追加。
+
+输出格式：
+{"need_next_action": false, "reason": "无需补充"}
+或
+{"need_next_action": true, "line": "NPC 补充的一句话", "reason": "需要补充的原因"}
+""".strip()
 
 try:
     from agent.agent_tools import NpcAgentTools
@@ -56,6 +80,7 @@ class DirectorAgent:
         tools: Optional[NpcAgentTools] = None,
         llm: Any = DEFAULT_LLM_ARGUMENT,
         enable_web_search: bool = False,
+        background_executor: Any = None,
     ) -> None:
         self.tools = tools or NpcAgentTools(enable_web_search=enable_web_search)
         if llm is DEFAULT_LLM_ARGUMENT:
@@ -71,6 +96,8 @@ class DirectorAgent:
 
         self.sessions: Dict[str, DirectorSession] = {}
         self.npc_agents: Dict[str, NpcGraphAgent] = {}
+        self.background_executor = background_executor or DEFAULT_DIRECTOR_BACKGROUND_EXECUTOR
+        self._next_action_locks = defaultdict(Lock)
 
     def close(self) -> None:
         if hasattr(self.tools, "close"):
@@ -187,7 +214,14 @@ class DirectorAgent:
             self.select_npc(session_id=session_id, npc_id=npc_id)
 
         npc_agent = self.get_npc_agent(target_npc_id)
-        return npc_agent.handle_message(
+        result = npc_agent.handle_message(
+            session_id=session_id,
+            player_id=player_id,
+            npc_id=target_npc_id,
+            player_message=message,
+        )
+        return self._apply_next_action_once(
+            result=result,
             session_id=session_id,
             player_id=player_id,
             npc_id=target_npc_id,
@@ -244,8 +278,128 @@ class DirectorAgent:
             self.npc_agents[npc_id] = NpcGraphAgent(
                 tools=self.tools,
                 llm_service=self.llm,
+                background_executor=self.background_executor,
+                defer_memory_write=True,
             )
         return self.npc_agents[npc_id]
+
+    def _apply_next_action_once(
+        self,
+        result: Dict[str, Any],
+        session_id: str,
+        player_id: str,
+        npc_id: str,
+        player_message: str,
+    ) -> Dict[str, Any]:
+        """用 Director LLM 判断是否追加一次 NPC 下一步动作。"""
+        reply = str(result.get("reply") or result.get("npc_reply") or "")
+        lock_key = (session_id, npc_id)
+        lock = self._next_action_locks[lock_key]
+
+        # 同一会话同一 NPC 的下一步动作判断不并发重入，避免重复追加。
+        if not lock.acquire(blocking=False):
+            result["next_action"] = {
+                "triggered": False,
+                "skipped_reason": "next_action_locked",
+            }
+            return result
+
+        try:
+            decision = self._judge_next_action(
+                session_id=session_id,
+                player_id=player_id,
+                npc_id=npc_id,
+                player_message=player_message,
+                npc_reply=reply,
+            )
+        finally:
+            lock.release()
+
+        if not decision.get("need_next_action"):
+            result["next_action"] = {
+                "triggered": False,
+                "reason": decision.get("reason"),
+            }
+            return result
+
+        next_line = str(decision.get("line") or "").strip()
+        if not next_line:
+            result["next_action"] = {
+                "triggered": False,
+                "reason": "下一步动作缺少 line",
+            }
+            return result
+
+        # 将追加回复并入 reply，保持现有 API/前端读取 reply 字段即可展示。
+        result["reply"] = f"{reply}\n{next_line}" if reply else next_line
+        result["next_action"] = {
+            "triggered": True,
+            "reply": next_line,
+            "reason": decision.get("reason"),
+        }
+        return result
+
+    def _judge_next_action(
+        self,
+        session_id: str,
+        player_id: str,
+        npc_id: str,
+        player_message: str,
+        npc_reply: str,
+    ) -> Dict[str, Any]:
+        """根据玩家和 NPC 的两条近期消息判断是否需要追加回复。"""
+        if self.llm is None:
+            return {"need_next_action": False, "reason": "director_llm_disabled"}
+
+        prompt = json.dumps({
+            "task": "director_next_action_judge",
+            "session_id": session_id,
+            "player_id": player_id,
+            "npc_id": npc_id,
+            "recent_messages": [
+                {"role": "player", "content": player_message},
+                {"role": "npc", "content": npc_reply},
+            ],
+            "output_schema": {
+                "need_next_action": "bool，是否需要 NPC 追加一次回复",
+                "line": "need_next_action=true 时必填，NPC 追加给玩家的一句话",
+                "reason": "简短原因",
+            },
+        }, ensure_ascii=False, default=str)
+
+        try:
+            response, _ = self.llm.chat(
+                prompt=prompt,
+                history=[],
+                system_prompt=NEXT_ACTION_SYSTEM_PROMPT,
+            )
+        except Exception:
+            _log.exception("[DirectorAgent] 下一步动作判断失败")
+            return {"need_next_action": False, "reason": "llm_call_failed"}
+
+        decision = self._extract_json_object(response)
+        return decision if isinstance(decision, dict) else {"need_next_action": False}
+
+    def _extract_json_object(self, text: str) -> Dict[str, Any]:
+        """解析 LLM 返回的单个 JSON object，失败时返回空字典。"""
+        if not text:
+            return {}
+        raw_text = str(text).strip()
+        try:
+            data = json.loads(raw_text)
+            return data if isinstance(data, dict) else {}
+        except json.JSONDecodeError:
+            pass
+
+        start = raw_text.find("{")
+        end = raw_text.rfind("}")
+        if start >= 0 and end > start:
+            try:
+                data = json.loads(raw_text[start:end + 1])
+                return data if isinstance(data, dict) else {}
+            except json.JSONDecodeError:
+                return {}
+        return {}
 
     def get_selected_npc_id(self, session_id: str) -> Optional[str]:
         session = self.sessions.get(session_id)

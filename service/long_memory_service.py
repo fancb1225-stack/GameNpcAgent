@@ -186,7 +186,7 @@ class LongMemoryService:
             try:
                 prompt = json.dumps(
                     {
-                        "task": "将咖啡厅 NPC 对话压缩为一条长期记忆，只输出 JSON。",
+                        "task": "将NPC 对话压缩为一条长期记忆，保留事实和关键信息，只输出 JSON。",
                         "player_id": player_id,
                         "npc_id": npc_id,
                         "dialogue": dialogue_text,
@@ -413,7 +413,7 @@ class LongMemoryService:
         if any(word in merged for word in ["喜欢", "偏好", "想喝", "拿铁", "美式", "手冲"]):
             memory_type = "preference"
             importance = 0.7
-            title = "玩家表达了咖啡偏好"
+            title = "玩家表达了偏好或喜好"
         elif any(word in merged for word in ["不要", "讨厌", "生气", "冒犯", "压力"]):
             memory_type = "warning"
             importance = 0.8
@@ -425,7 +425,7 @@ class LongMemoryService:
         elif any(word in merged for word in ["经常", "每天", "上午", "下午", "常来", "习惯"]):
             memory_type = "habit"
             importance = 0.65
-            title = "玩家表现出到店或互动习惯"
+            title = "玩家表现出了某些习惯或规律"
 
         return {
             "title": title,

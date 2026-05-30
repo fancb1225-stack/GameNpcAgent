@@ -112,6 +112,7 @@ class NpcAgentTools:
             "get_player_profile": self.get_player_profile,
             "update_player_profile": self.update_player_profile,
             "get_relationship": self.get_relationship,
+            "get_player_relationships": self.get_player_relationships,
             "apply_relationship_delta": self.apply_relationship_delta,
             "get_history_message": self.get_history_message,
             "write_player_message": self.write_player_message,
@@ -240,6 +241,18 @@ class NpcAgentTools:
                         "npc_id": {"type": "string"},
                     },
                     "required": ["player_id", "npc_id"],
+                },
+            },
+            {
+                "name_for_human": "查询玩家与全部 NPC 关系",
+                "name_for_model": "get_player_relationships",
+                "description_for_model": "查询玩家与所有 NPC 的五维关系，用于回答涉及其他 NPC 的问题。",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "player_id": {"type": "string"},
+                    },
+                    "required": ["player_id"],
                 },
             },
             {
@@ -556,6 +569,19 @@ class NpcAgentTools:
             return _fail("get_relationship", "缺少必要参数 player_id 或 npc_id")
         rel = self.relationships.get_or_create_player_npc_relationship(player_id, npc_id)
         return _ok("get_relationship", relationship=rel)
+
+    def get_player_relationships(self, player_id: str) -> dict[str, Any]:
+        if not player_id:
+            return _fail("get_player_relationships", "缺少必要参数 player_id")
+
+        # 返回玩家与所有 NPC 的关系，供跨 NPC 对话问题引用。
+        relationships = self.relationships.list_player_relationships(player_id)
+        return _ok(
+            "get_player_relationships",
+            player_id=player_id,
+            relationships=relationships,
+            count=len(relationships),
+        )
 
     def apply_relationship_delta(self, player_id: str, npc_id: str, delta: dict[str, int]) -> dict[str, Any]:
         if not player_id or not npc_id:
